@@ -1,9 +1,3 @@
-output "certificate_arn" {
-  description = "Validated ACM certificate ARN — use this as primary_acm_certificate_arn in the ALB module"
-  value       = aws_acm_certificate_validation.this.certificate_arn
-}
-
-output "domain_name" {
-  description = "The primary domain name"
-  value       = var.domain_name
-}
+output "certificate_arn"           { value = aws_acm_certificate_validation.this.certificate_arn }
+output "primary_health_check_id"   { value = aws_route53_health_check.primary.id }
+output "secondary_health_check_id" { value = aws_route53_health_check.secondary.id }
