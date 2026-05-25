@@ -1,0 +1,43 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonApprovedRegions",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*",
+        "organizations:*",
+        "route53:*",
+        "budgets:*",
+        "waf::*",
+        "cloudfront:*",
+        "sts:*",
+        "globalaccelerator:*",
+        "support:*",
+        "trustedadvisor:*",
+        "health:*",
+        "shield:*",
+        "acm:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "eu-central-1",
+            "ap-southeast-1"
+          ]
+        },
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::*:role/SecurityBreakGlassRole",
+            "arn:aws:iam::*:role/TerraformDeployRole"
+          ]
+        }
+      }
+    }
+  ]
+}

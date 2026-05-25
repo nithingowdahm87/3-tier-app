@@ -1,0 +1,36 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ProtectTerraformStateBucket",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteBucket",
+        "s3:DeleteBucketPolicy",
+        "s3:PutBucketVersioning",
+        "s3:DeleteBucketEncryption",
+        "s3:PutEncryptionConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::*terraform-state*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/SecurityBreakGlassRole"
+        }
+      }
+    },
+    {
+      "Sid": "ProtectTerraformLockTable",
+      "Effect": "Deny",
+      "Action": [
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/*terraform*lock*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/SecurityBreakGlassRole"
+        }
+      }
+    }
+  ]
+}

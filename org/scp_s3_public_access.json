@@ -1,0 +1,36 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyS3PublicAccess",
+      "Effect": "Deny",
+      "Action": [
+        "s3:PutBucketPublicAccessBlock",
+        "s3:DeletePublicAccessBlock"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:public-access-block-configuration/BlockPublicAcls": "true",
+          "s3:public-access-block-configuration/IgnorePublicAcls": "true",
+          "s3:public-access-block-configuration/BlockPublicPolicy": "true",
+          "s3:public-access-block-configuration/RestrictPublicBuckets": "true"
+        },
+        "ArnNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/SecurityBreakGlassRole"
+        }
+      }
+    },
+    {
+      "Sid": "DenyS3AccountPublicAccessDisable",
+      "Effect": "Deny",
+      "Action": "s3:PutAccountPublicAccessBlock",
+      "Resource": "*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/SecurityBreakGlassRole"
+        }
+      }
+    }
+  ]
+}

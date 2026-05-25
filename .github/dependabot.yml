@@ -1,0 +1,91 @@
+# Dependabot — automatically raises PRs when Terraform provider or module versions are outdated.
+# Merge after reviewing the plan diff in CI.
+version: 2
+updates:
+  # Root module providers (hashicorp/aws, hashicorp/tls, etc.)
+  - package-ecosystem: "terraform"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "terraform"
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 10
+
+  # environments/dev
+  - package-ecosystem: "terraform"
+    directory: "/environments/dev"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "env:dev"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # environments/stage
+  - package-ecosystem: "terraform"
+    directory: "/environments/stage"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "env:stage"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # environments/prod
+  - package-ecosystem: "terraform"
+    directory: "/environments/prod"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "env:prod"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # bootstrap-state module
+  - package-ecosystem: "terraform"
+    directory: "/bootstrap-state"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "terraform"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # GitHub Actions (when CI/CD is added later)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
