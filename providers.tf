@@ -15,12 +15,3 @@ provider "aws" {
     tags = local.common_tags
   }
 }
-
-provider "aws" {
-  alias  = "peer"
-  region = var.secondary_region
-
-  default_tags {
-    tags = local.common_tags
-  }
-}

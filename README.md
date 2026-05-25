@@ -38,8 +38,8 @@ A production-grade, multi-region 3-tier application infrastructure on AWS, fully
 | `alb` | External ALB (HTTPS + HTTP→HTTPS redirect) + Internal ALB |
 | `nlb` | Network Load Balancer fronting the External ALB |
 | `compute` | Launch Template (IMDSv2, encrypted EBS) + ASG with mixed Spot/On-Demand |
-| `bastion` | Bastion host with EIP for emergency SSH access |
-| `aurora_global` | Aurora MySQL Serverless v2 Global Cluster with enhanced monitoring |
+| `bastion` | HA Bastion ASG (min=1, spans all public subnets across AZs) |
+| `aurora_global` | Aurora MySQL Serverless v2 Global Cluster with enhanced monitoring on both regions |
 | `dynamodb_global` | DynamoDB Global Table with PITR, SSE, deletion protection |
 | `backup` | AWS Backup with daily (7d) + weekly (30d) retention |
 | `peering` | Cross-region VPC Peering with bidirectional routes |
@@ -51,10 +51,24 @@ A production-grade, multi-region 3-tier application infrastructure on AWS, fully
 - AWS CLI configured with appropriate permissions
 - An ACM certificate issued in the primary region for your domain
 - An EC2 Key Pair created in both regions
+- An AWS Secrets Manager secret containing the Aurora master password (see below)
 
 ## Quick Start
 
-### 1. Bootstrap Remote State (one-time)
+### 1. Create Aurora Password in Secrets Manager
+
+Before deploying, store the Aurora master password in AWS Secrets Manager:
+
+```bash
+aws secretsmanager create-secret \
+  --name "/prod/aurora/master_password" \
+  --secret-string '{"password": "YourStrongPassword123!"}' \
+  --region us-east-1
+```
+
+Then set `db_secret_name = "/prod/aurora/master_password"` in your `terraform.tfvars`.
+
+### 2. Bootstrap Remote State (one-time)
 
 ```bash
 cd bootstrap-state
@@ -64,35 +78,28 @@ terraform apply
 
 Note the output `state_bucket` and `lock_table` values.
 
-### 2. Configure Backend
+### 3. Configure Backend
 
-Edit `versions.tf` and replace the placeholder values:
-```hcl
-backend "s3" {
-  bucket         = "<your-state-bucket-name>"
-  key            = "3tier-app/terraform.tfstate"
-  region         = "us-east-1"
-  dynamodb_table = "<your-lock-table-name>"
-  encrypt        = true
-}
+Copy and fill in `backend.hcl`:
+
+```bash
+cp backend.hcl.example backend.hcl
+# Edit backend.hcl with your real bucket and table names
 ```
 
-### 3. Set Variables
+> ⚠️ `backend.hcl` is gitignored — never commit it with real values.
+
+### 4. Set Variables
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your real values
 ```
 
-> ⚠️ **Never hardcode `db_password`.** Use an environment variable instead:
-> ```bash
-> export TF_VAR_db_password="your-secure-password"
-> ```
-
-### 4. Deploy
+### 5. Deploy
 
 ```bash
-terraform init
+terraform init -backend-config=backend.hcl
 terraform plan
 terraform apply
 ```
@@ -103,10 +110,17 @@ terraform apply
 - EBS volumes encrypted at rest on all instances
 - ALB enforces TLS 1.3 (`ELBSecurityPolicy-TLS13-1-2-2021-06`)
 - Aurora storage encrypted + CloudWatch audit/error/slowquery logs
+- Aurora master password stored in AWS Secrets Manager — never in tfvars or env vars
 - Bastion SSH restricted to explicit CIDR (no `0.0.0.0/0` default)
+- Bastion runs as an ASG (min=1) across multiple AZs for high availability
 - DynamoDB SSE enabled with deletion protection
 - S3 state bucket has versioning, AES256 encryption, and public access blocked
 - All sensitive Terraform outputs marked `sensitive = true`
+
+## Architecture Diagram
+
+The draw.io diagram is located at [`docs/draw.io-3tier.txt`](docs/draw.io-3tier.txt).  
+Open it at [app.diagrams.net](https://app.diagrams.net/) via File → Open from → This Device.
 
 ## Cost Notes
 

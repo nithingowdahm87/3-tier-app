@@ -131,8 +131,8 @@ variable "db_username" {
   default     = "admin"
 }
 
-variable "db_password" {
-  description = "Aurora master password - use a secrets manager or environment variable, never hardcode"
+variable "db_secret_name" {
+  description = "AWS Secrets Manager secret name that stores the Aurora master password. Secret value must be a JSON key 'password'."
   type        = string
-  sensitive   = true
+  # Example: "/prod/aurora/master_password"
 }

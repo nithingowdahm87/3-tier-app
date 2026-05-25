@@ -6,6 +6,19 @@ locals {
   }
 }
 
+# ─── Fetch Aurora password from Secrets Manager ───────────────────────────────
+# Store your password in AWS Secrets Manager as JSON: {"password": "yourpassword"}
+# Then set var.db_secret_name to the secret name/ARN.
+
+data "aws_secretsmanager_secret_version" "aurora" {
+  provider  = aws.primary
+  secret_id = var.db_secret_name
+}
+
+locals {
+  db_password = jsondecode(data.aws_secretsmanager_secret_version.aurora.secret_string)["password"]
+}
+
 # ─── Primary Network ──────────────────────────────────────────────────────────
 
 module "network_primary" {
@@ -77,14 +90,14 @@ module "nlb_primary" {
   tags              = local.common_tags
 }
 
-# ─── Bastion ──────────────────────────────────────────────────────────────────
+# ─── Bastion (HA ASG across public subnets) ───────────────────────────────────
 
 module "bastion_primary" {
   source    = "./modules/bastion"
   providers = { aws = aws.primary }
 
   name_prefix      = "${var.project_name}-${var.environment}-primary"
-  public_subnet_id = module.network_primary.public_subnet_ids[0]
+  subnet_ids       = module.network_primary.public_subnet_ids
   bastion_sg_id    = module.security_primary.bastion_sg_id
   key_name         = var.key_name
   instance_type    = var.bastion_instance_type
@@ -149,7 +162,7 @@ module "aurora" {
   secondary_aurora_sg_id  = module.security_secondary.aurora_sg_id
   database_name           = var.db_name
   master_username         = var.db_username
-  master_password         = var.db_password
+  master_password         = local.db_password
   tags                    = local.common_tags
 }
 
@@ -166,7 +179,6 @@ module "dynamodb" {
 }
 
 # ─── AWS Backup ───────────────────────────────────────────────────────────────
-# FIX: resource_arns now uses a proper data-driven ARN list, not a conditional string hack
 
 module "backup_primary" {
   source    = "./modules/backup"
