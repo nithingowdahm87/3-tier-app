@@ -6,13 +6,48 @@ locals {
   }
 }
 
-# ─── Fetch Aurora password from Secrets Manager ───────────────────────────────
-# Store your password in AWS Secrets Manager as JSON: {"password": "yourpassword"}
-# Then set var.db_secret_name to the secret name/ARN.
+# ─── ALB Access Logs S3 Bucket ──────────────────────────────────────────────────────────
 
+module "logging" {
+  source    = "./modules/logging"
+  providers = { aws = aws.primary }
+
+  bucket_name        = "${var.project_name}-${var.environment}-alb-logs"
+  log_retention_days = 90
+  tags               = local.common_tags
+}
+
+# ─── EC2 Key Pair ─────────────────────────────────────────────────────────────────
+
+module "keypair" {
+  source    = "./modules/keypair"
+  providers = { aws = aws.primary }
+
+  key_name    = "${var.project_name}-${var.environment}-key"
+  environment = var.environment
+  tags        = local.common_tags
+}
+
+# ─── Aurora Password Secret ─────────────────────────────────────────────────────────
+# The secret RESOURCE is managed here. Seed the value after first apply:
+#   aws secretsmanager put-secret-value \
+#     --secret-id /${var.environment}/aurora/master_password \
+#     --secret-string '{"password": "YourStrongPassword123!"}'
+
+module "aurora_secret" {
+  source    = "./modules/secrets"
+  providers = { aws = aws.primary }
+
+  secret_name = "/${var.environment}/aurora/master_password"
+  description = "Aurora MySQL master password for ${var.project_name} ${var.environment}"
+  tags        = local.common_tags
+}
+
+# Fetch the secret value (must be seeded before apply or use -target ordering)
 data "aws_secretsmanager_secret_version" "aurora" {
-  provider  = aws.primary
-  secret_id = var.db_secret_name
+  provider   = aws.primary
+  secret_id  = module.aurora_secret.secret_name
+  depends_on = [module.aurora_secret]
 }
 
 locals {
@@ -75,8 +110,8 @@ module "alb_primary" {
   private_subnet_ids  = module.network_primary.private_subnet_ids
   alb_sg_id           = module.security_primary.alb_sg_id
   internal_alb_sg_id  = module.security_primary.internal_alb_sg_id
-  acm_certificate_arn = var.primary_acm_certificate_arn
-  alb_logs_bucket     = var.alb_logs_bucket
+  acm_certificate_arn = module.dns_cert.certificate_arn
+  alb_logs_bucket     = module.logging.bucket_name
   tags                = local.common_tags
 }
 
@@ -91,6 +126,22 @@ module "nlb_primary" {
   tags              = local.common_tags
 }
 
+# ─── DNS + ACM Certificate ──────────────────────────────────────────────────────────
+# NOTE: The ALB module depends on dns_cert for the certificate ARN.
+# Use -target=module.dns_cert on first apply if the cert doesn't exist yet.
+
+module "dns_cert" {
+  source    = "./modules/dns_cert"
+  providers = { aws = aws.primary }
+
+  domain_name            = var.domain_name
+  subject_alternative_names = ["www.${var.domain_name}"]
+  hosted_zone_id         = var.hosted_zone_id
+  nlb_dns_name           = module.nlb_primary.nlb_dns_name
+  nlb_zone_id            = module.nlb_primary.nlb_zone_id
+  tags                   = local.common_tags
+}
+
 # ─── Bastion (HA ASG across public subnets) ───────────────────────────────────
 
 module "bastion_primary" {
@@ -100,7 +151,7 @@ module "bastion_primary" {
   name_prefix   = "${var.project_name}-${var.environment}-primary"
   subnet_ids    = module.network_primary.public_subnet_ids
   bastion_sg_id = module.security_primary.bastion_sg_id
-  key_name      = var.key_name
+  key_name      = module.keypair.key_name
   instance_type = var.bastion_instance_type
   tags          = local.common_tags
 }
@@ -115,7 +166,7 @@ module "web_asg_primary" {
   role                    = "web"
   instance_type           = var.web_instance_type
   fallback_instance_type  = var.web_fallback_instance_type
-  key_name                = var.key_name
+  key_name                = module.keypair.key_name
   security_group_ids      = [module.security_primary.web_sg_id]
   subnet_ids              = module.network_primary.private_subnet_ids
   target_group_arns       = [module.alb_primary.web_target_group_arn]
@@ -124,6 +175,7 @@ module "web_asg_primary" {
   desired_capacity        = var.web_desired_capacity
   on_demand_base_capacity = var.on_demand_base_capacity
   user_data               = var.web_user_data
+  secret_path_prefix      = "/${var.environment}"
   tags                    = local.common_tags
 }
 
@@ -135,7 +187,7 @@ module "app_asg_primary" {
   role                    = "app"
   instance_type           = var.app_instance_type
   fallback_instance_type  = var.app_fallback_instance_type
-  key_name                = var.key_name
+  key_name                = module.keypair.key_name
   security_group_ids      = [module.security_primary.app_sg_id]
   subnet_ids              = module.network_primary.private_subnet_ids
   target_group_arns       = [module.alb_primary.app_target_group_arn]
@@ -144,6 +196,7 @@ module "app_asg_primary" {
   desired_capacity        = var.app_desired_capacity
   on_demand_base_capacity = var.on_demand_base_capacity
   user_data               = var.app_user_data
+  secret_path_prefix      = "/${var.environment}"
   tags                    = local.common_tags
 }
 
@@ -204,8 +257,8 @@ module "vpc_peering" {
   peer_vpc_id              = module.network_secondary.vpc_id
   peer_owner_id            = var.aws_account_id
   peer_region              = var.secondary_region
-  requester_route_table_id = module.network_primary.private_route_table_id
-  peer_route_table_id      = module.network_secondary.private_route_table_id
+  requester_route_table_ids = module.network_primary.private_route_table_ids
+  peer_route_table_ids      = module.network_secondary.private_route_table_ids
   requester_cidr           = var.primary_vpc_cidr
   peer_cidr                = var.secondary_vpc_cidr
   tags                     = local.common_tags

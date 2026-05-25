@@ -50,24 +50,20 @@ variable "bastion_allowed_cidr" {
   type        = string
 }
 
-variable "key_name" {
-  description = "Name of the EC2 key pair for SSH access"
-  type        = string
-}
-
 variable "bastion_instance_type" {
   description = "EC2 instance type for the bastion host"
   type        = string
   default     = "t3.micro"
 }
 
-variable "primary_acm_certificate_arn" {
-  description = "ARN of the ACM certificate for HTTPS on the external ALB (primary region)"
+# DNS
+variable "domain_name" {
+  description = "Primary domain name for the application (e.g. app.example.com). Must exist in the Route53 hosted zone."
   type        = string
 }
 
-variable "alb_logs_bucket" {
-  description = "S3 bucket name for ALB access logs. Must have the ALB service account bucket policy applied before use."
+variable "hosted_zone_id" {
+  description = "Route53 hosted zone ID where the ACM validation records and app A record will be created."
   type        = string
 }
 
@@ -137,6 +133,7 @@ variable "db_username" {
 }
 
 variable "db_secret_name" {
-  description = "AWS Secrets Manager secret name/ARN containing the Aurora master password. Secret value must be JSON with key 'password'."
+  description = "AWS Secrets Manager secret name/ARN containing the Aurora master password. Created by module.aurora_secret; seed value after first apply."
   type        = string
+  default     = ""
 }

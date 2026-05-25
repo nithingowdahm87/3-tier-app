@@ -36,6 +36,21 @@ resource "aws_iam_role_policy_attachment" "cloudwatch" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+# Least-privilege policy: EC2 instances can only read secrets under their env path
+resource "aws_iam_role_policy" "secrets_read" {
+  name = "${var.name_prefix}-${var.role}-secrets-read"
+  role = aws_iam_role.ec2.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "AllowSecretRead"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+      Resource = "arn:aws:secretsmanager:*:*:secret:${var.secret_path_prefix}/*"
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "${var.name_prefix}-${var.role}-profile"
   role = aws_iam_role.ec2.name
@@ -121,14 +136,12 @@ resource "aws_autoscaling_group" "this" {
     }
   }
 
-  # Propagate Name tag
   tag {
     key                 = "Name"
     value               = "${var.name_prefix}-${var.role}"
     propagate_at_launch = true
   }
 
-  # Propagate all common tags (Project, Environment, ManagedBy) to launched instances
   dynamic "tag" {
     for_each = var.tags
     content {

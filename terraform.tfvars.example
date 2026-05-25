@@ -1,5 +1,5 @@
-# Copy this file to terraform.tfvars and fill in real values.
-# NEVER commit terraform.tfvars - it is in .gitignore.
+# Copy to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars — it is gitignored.
 
 project_name     = "myapp"
 environment      = "prod"
@@ -12,19 +12,14 @@ primary_vpc_cidr   = "10.0.0.0/16"
 secondary_vpc_cidr = "10.1.0.0/16"
 az_count           = 2
 
-# Restrict this to YOUR office/VPN IP - do NOT use 0.0.0.0/0
+# Restrict to YOUR office/VPN IP only
 bastion_allowed_cidr = "YOUR_IP/32"
 
-key_name = "your-ec2-keypair-name"
+# DNS — must be a domain hosted in Route53
+domain_name    = "app.example.com"
+hosted_zone_id = "Z1234567890ABC"
 
-# ACM Certificate ARN for HTTPS on external ALB (primary region)
-primary_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
-
-# S3 bucket for ALB access logs (must have ALB service account bucket policy applied)
-# See: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
-alb_logs_bucket = "your-alb-access-logs-bucket"
-
-# Compute sizing
+# Compute
 web_instance_type          = "t3.small"
 web_fallback_instance_type = "t3.medium"
 web_min_size               = 1
@@ -40,9 +35,7 @@ app_desired_capacity       = 2
 # Database
 db_name     = "appdb"
 db_username = "admin"
-
-# Secrets Manager secret name containing Aurora master password.
-# Create it first: aws secretsmanager create-secret \
-#   --name "/prod/aurora/master_password" \
-#   --secret-string '{"password": "YourStrongPassword123!"}'
-db_secret_name = "/prod/aurora/master_password"
+# db_secret_name is auto-derived from environment. After first apply, seed the value:
+#   aws secretsmanager put-secret-value \
+#     --secret-id /prod/aurora/master_password \
+#     --secret-string '{"password": "YourStrongPassword123!"}'
