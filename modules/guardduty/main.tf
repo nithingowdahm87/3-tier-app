@@ -1,17 +1,19 @@
 terraform {
   required_providers {
-    aws = { source = "hashicorp/aws" }
+    aws = {
+      source                = "hashicorp/aws"
+      configuration_aliases = [aws.primary, aws.secondary]
+    }
   }
 }
 
-# GuardDuty — threat detection analyzing VPC Flow Logs, CloudTrail, DNS
 resource "aws_guardduty_detector" "primary" {
   provider = aws.primary
   enable   = true
 
   datasources {
     s3_logs { enable = true }
-    kubernetes { audit_logs { enable = true } }
+    kubernetes { audit_logs { enable = false } }
     malware_protection {
       scan_ec2_instance_with_findings {
         ebs_volumes { enable = true }
@@ -38,24 +40,22 @@ resource "aws_guardduty_detector" "secondary" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-guardduty-secondary" })
 }
 
-# SNS notification for HIGH/CRITICAL findings via EventBridge
+# SNS notification for HIGH/CRITICAL GuardDuty findings via EventBridge
 resource "aws_cloudwatch_event_rule" "guardduty_findings" {
   provider    = aws.primary
-  name        = "${var.name_prefix}-guardduty-findings"
-  description = "Capture GuardDuty HIGH and CRITICAL findings"
+  name        = "${var.name_prefix}-guardduty-high-findings"
+  description = "Capture HIGH and CRITICAL GuardDuty findings"
 
   event_pattern = jsonencode({
     source      = ["aws.guardduty"]
     detail-type = ["GuardDuty Finding"]
-    detail = {
-      severity = [{ numeric = [">=", 7] }]
-    }
+    detail      = { severity = [{ numeric = [">=", 7] }] }
   })
 }
 
 resource "aws_cloudwatch_event_target" "guardduty_sns" {
   provider  = aws.primary
   rule      = aws_cloudwatch_event_rule.guardduty_findings.name
-  target_id = "guardduty-sns"
-  arn       = var.sns_topic_arn
+  target_id = "GuardDutySNS"
+  arn       = var.alerts_sns_topic_arn
 }

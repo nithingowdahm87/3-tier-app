@@ -1,12 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source                = "hashicorp/aws"
-      configuration_aliases = [aws.primary, aws.secondary]
-    }
-  }
-}
-
-variable "name_prefix"   { type = string }
-variable "sns_topic_arn" { type = string }
-variable "tags"          { type = map(string); default = {} }
+variable "name_prefix"           { type = string }
+variable "alerts_sns_topic_arn"  { type = string; description = "SNS topic ARN for GuardDuty HIGH/CRITICAL finding alerts" }
+variable "tags"                  { type = map(string); default = {} }

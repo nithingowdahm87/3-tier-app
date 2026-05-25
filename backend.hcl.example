@@ -1,10 +1,9 @@
-# Partial backend configuration — fill in your real values and run:
-#   terraform init -backend-config=backend.hcl
-#
-# Copy this file: cp backend.hcl.example backend.hcl
-# backend.hcl is in .gitignore — NEVER commit it with real values.
+# Partial backend configuration — copy to backend.hcl and fill in real values.
+# Run: terraform init -backend-config=backend.hcl
+# NEVER commit backend.hcl — it is gitignored.
 
 bucket         = "REPLACE_WITH_YOUR_STATE_BUCKET"
 region         = "us-east-1"
+key            = "prod/terraform.tfstate"
 dynamodb_table = "REPLACE_WITH_YOUR_LOCK_TABLE"
 encrypt        = true

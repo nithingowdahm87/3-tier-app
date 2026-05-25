@@ -1,1 +1,1 @@
-output "security_hub_enabled" { value = true }
+output "securityhub_account_id" { value = aws_securityhub_account.this.id }

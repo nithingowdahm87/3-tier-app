@@ -47,12 +47,13 @@ resource "aws_security_group" "app" {
 
 resource "aws_security_group" "aurora" {
   name        = "${var.name_prefix}-aurora-sg"
-  description = "Aurora SG - allows MySQL only from app tier, no outbound"
+  description = "Aurora SG - MySQL only from app tier, no unrestricted egress"
   vpc_id      = var.vpc_id
 
   ingress { from_port = 3306 to_port = 3306 protocol = "tcp" security_groups = [aws_security_group.app.id] }
-  # MAANG FIX: Aurora DB has no business making outbound connections — deny all egress
-  egress { from_port = 0 to_port = 0 protocol = "-1" cidr_blocks = [var.vpc_cidr] }
+  # Locked egress: Aurora only needs to reach AWS service endpoints (Secrets Manager, monitoring)
+  # within the VPC — no internet egress needed
+  egress { from_port = 443 to_port = 443 protocol = "tcp" cidr_blocks = [var.vpc_cidr] }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-aurora-sg" })
 }
@@ -66,4 +67,16 @@ resource "aws_security_group" "bastion" {
   egress  { from_port = 0  to_port = 0  protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-bastion-sg" })
+}
+
+# Redis SG — used by elasticache module
+resource "aws_security_group" "redis" {
+  name        = "${var.name_prefix}-redis-sg"
+  description = "Redis SG - allows traffic only from app tier"
+  vpc_id      = var.vpc_id
+
+  ingress { from_port = 6379 to_port = 6379 protocol = "tcp" security_groups = [aws_security_group.app.id] }
+  egress  { from_port = 0    to_port = 0    protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+
+  tags = merge(var.tags, { Name = "${var.name_prefix}-redis-sg" })
 }

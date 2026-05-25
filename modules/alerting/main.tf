@@ -4,8 +4,8 @@ terraform {
   }
 }
 
-# Central SNS topic for all ops alerts
-resource "aws_sns_topic" "ops" {
+# Central SNS topic for all operational alerts
+resource "aws_sns_topic" "alerts" {
   name              = "${var.name_prefix}-ops-alerts"
   kms_master_key_id = "alias/aws/sns"
   tags              = merge(var.tags, { Name = "${var.name_prefix}-ops-alerts" })
@@ -13,29 +13,32 @@ resource "aws_sns_topic" "ops" {
 
 resource "aws_sns_topic_subscription" "email" {
   count     = var.alert_email != "" ? 1 : 0
-  topic_arn = aws_sns_topic.ops.arn
+  topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
   endpoint  = var.alert_email
 }
 
-# ALB Alarms
+# ALB 5xx rate alarm
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   alarm_name          = "${var.name_prefix}-alb-5xx-rate"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
-  metric_name         = "HTTPCode_Target_5XX_Count"
+  metric_name         = "HTTPCode_ELB_5XX_Count"
   namespace           = "AWS/ApplicationELB"
   period              = 300
   statistic           = "Sum"
   threshold           = var.alb_5xx_threshold
-  alarm_description   = "ALB 5xx errors exceeded threshold"
-  alarm_actions       = [aws_sns_topic.ops.arn]
-  ok_actions          = [aws_sns_topic.ops.arn]
-  dimensions          = { LoadBalancer = var.alb_arn_suffix }
+  alarm_description   = "ALB 5xx error rate exceeded threshold"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = { LoadBalancer = var.alb_arn_suffix }
 }
 
+# ALB p99 latency alarm
 resource "aws_cloudwatch_metric_alarm" "alb_latency_p99" {
-  alarm_name          = "${var.name_prefix}-alb-latency-p99"
+  alarm_name          = "${var.name_prefix}-alb-p99-latency"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   extended_statistic  = "p99"
@@ -43,12 +46,33 @@ resource "aws_cloudwatch_metric_alarm" "alb_latency_p99" {
   namespace           = "AWS/ApplicationELB"
   period              = 300
   threshold           = 2
-  alarm_description   = "ALB p99 latency > 2s"
-  alarm_actions       = [aws_sns_topic.ops.arn]
-  dimensions          = { LoadBalancer = var.alb_arn_suffix }
+  alarm_description   = "ALB p99 latency exceeded 2 seconds"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = { LoadBalancer = var.alb_arn_suffix }
 }
 
-# Aurora Alarms
+# Web ASG healthy host count alarm
+resource "aws_cloudwatch_metric_alarm" "web_healthy_hosts" {
+  alarm_name          = "${var.name_prefix}-web-healthy-hosts"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "HealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Minimum"
+  threshold           = var.web_min_healthy_hosts
+  alarm_description   = "Web tier healthy host count dropped below minimum"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    TargetGroup  = var.web_target_group_arn_suffix
+    LoadBalancer = var.alb_arn_suffix
+  }
+}
+
+# Aurora replica lag alarm
 resource "aws_cloudwatch_metric_alarm" "aurora_replica_lag" {
   alarm_name          = "${var.name_prefix}-aurora-replica-lag"
   comparison_operator = "GreaterThanThreshold"
@@ -58,11 +82,11 @@ resource "aws_cloudwatch_metric_alarm" "aurora_replica_lag" {
   period              = 60
   statistic           = "Maximum"
   threshold           = 30000
-  alarm_description   = "Aurora global replication lag > 30s"
-  alarm_actions       = [aws_sns_topic.ops.arn]
-  dimensions          = { DBClusterIdentifier = var.aurora_cluster_id }
+  alarm_description   = "Aurora global replication lag exceeded 30s"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
 }
 
+# Aurora connection count alarm
 resource "aws_cloudwatch_metric_alarm" "aurora_connections" {
   alarm_name          = "${var.name_prefix}-aurora-connections"
   comparison_operator = "GreaterThanThreshold"
@@ -70,14 +94,15 @@ resource "aws_cloudwatch_metric_alarm" "aurora_connections" {
   metric_name         = "DatabaseConnections"
   namespace           = "AWS/RDS"
   period              = 300
-  statistic           = "Maximum"
-  threshold           = var.aurora_max_connections
-  alarm_description   = "Aurora connections near limit"
-  alarm_actions       = [aws_sns_topic.ops.arn]
-  dimensions          = { DBClusterIdentifier = var.aurora_cluster_id }
+  statistic           = "Average"
+  threshold           = var.aurora_max_connections_threshold
+  alarm_description   = "Aurora connection count nearing limit"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+
+  dimensions = { DBClusterIdentifier = var.aurora_cluster_id }
 }
 
-# DynamoDB throttle alarm
+# DynamoDB throttled requests alarm
 resource "aws_cloudwatch_metric_alarm" "dynamodb_throttles" {
   alarm_name          = "${var.name_prefix}-dynamodb-throttles"
   comparison_operator = "GreaterThanThreshold"
@@ -88,36 +113,31 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_throttles" {
   statistic           = "Sum"
   threshold           = 0
   alarm_description   = "DynamoDB throttled requests detected"
-  alarm_actions       = [aws_sns_topic.ops.arn]
-  dimensions          = { TableName = var.dynamodb_table_name }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = { TableName = var.dynamodb_table_name }
 }
 
-# ASG healthy host alarm
-resource "aws_cloudwatch_metric_alarm" "asg_healthy_hosts" {
-  alarm_name          = "${var.name_prefix}-asg-unhealthy-hosts"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "HealthyHostCount"
-  namespace           = "AWS/ApplicationELB"
-  period              = 60
-  statistic           = "Minimum"
-  threshold           = var.min_healthy_hosts
-  alarm_description   = "Healthy host count below minimum"
-  alarm_actions       = [aws_sns_topic.ops.arn]
-  dimensions = {
-    LoadBalancer = var.alb_arn_suffix
-    TargetGroup  = var.web_tg_arn_suffix
-  }
-}
-
-# ASG SNS notifications (launch/terminate events)
+# ASG launch/terminate notifications
 resource "aws_autoscaling_notification" "web" {
-  group_names = var.asg_names
+  group_names = [var.web_asg_name]
+  topic_arn   = aws_sns_topic.alerts.arn
   notifications = [
     "autoscaling:EC2_INSTANCE_LAUNCH",
     "autoscaling:EC2_INSTANCE_TERMINATE",
     "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
     "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
   ]
-  topic_arn = aws_sns_topic.ops.arn
+}
+
+resource "aws_autoscaling_notification" "app" {
+  group_names = [var.app_asg_name]
+  topic_arn   = aws_sns_topic.alerts.arn
+  notifications = [
+    "autoscaling:EC2_INSTANCE_LAUNCH",
+    "autoscaling:EC2_INSTANCE_TERMINATE",
+    "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+    "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+  ]
 }

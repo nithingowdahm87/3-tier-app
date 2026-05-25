@@ -1,22 +1,22 @@
 terraform {
   required_providers {
-    aws = { source = "hashicorp/aws" }
+    aws = {
+      source                = "hashicorp/aws"
+      configuration_aliases = [aws.primary, aws.us_east_1]
+    }
   }
 }
 
-# S3 bucket for static assets
+# S3 bucket for static assets (JS, CSS, images)
 resource "aws_s3_bucket" "static" {
-  bucket        = "${var.name_prefix}-static-assets-${var.aws_account_id}"
+  provider      = aws.primary
+  bucket        = var.bucket_name
   force_destroy = false
-  tags          = merge(var.tags, { Name = "${var.name_prefix}-static" })
-}
-
-resource "aws_s3_bucket_versioning" "static" {
-  bucket = aws_s3_bucket.static.id
-  versioning_configuration { status = "Enabled" }
+  tags          = merge(var.tags, { Name = var.bucket_name })
 }
 
 resource "aws_s3_bucket_public_access_block" "static" {
+  provider                = aws.primary
   bucket                  = aws_s3_bucket.static.id
   block_public_acls       = true
   block_public_policy     = true
@@ -25,24 +25,27 @@ resource "aws_s3_bucket_public_access_block" "static" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "static" {
-  bucket = aws_s3_bucket.static.id
+  provider = aws.primary
+  bucket   = aws_s3_bucket.static.id
   rule {
     apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
   }
 }
 
-# CloudFront Origin Access Control (OAC) — replaces legacy OAI
-resource "aws_cloudfront_origin_access_control" "this" {
-  name                              = "${var.name_prefix}-oac"
-  description                       = "OAC for ${var.name_prefix} static assets"
+# CloudFront Origin Access Control (OAC) — modern replacement for OAI
+resource "aws_cloudfront_origin_access_control" "static" {
+  provider                          = aws.us_east_1
+  name                              = "${var.name_prefix}-static-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
 
-# S3 bucket policy — allow CloudFront OAC only
+# S3 bucket policy — only allows CloudFront OAC
 resource "aws_s3_bucket_policy" "static" {
-  bucket = aws_s3_bucket.static.id
+  provider = aws.primary
+  bucket   = aws_s3_bucket.static.id
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -51,29 +54,29 @@ resource "aws_s3_bucket_policy" "static" {
       Principal = { Service = "cloudfront.amazonaws.com" }
       Action    = "s3:GetObject"
       Resource  = "${aws_s3_bucket.static.arn}/*"
-      Condition = { StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.this.arn } }
+      Condition = {
+        StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.static.arn }
+      }
     }]
   })
 }
 
-# CloudFront distribution
-resource "aws_cloudfront_distribution" "this" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  comment             = "${var.name_prefix} static assets CDN"
-  default_root_object = "index.html"
-  price_class         = var.price_class
+resource "aws_cloudfront_distribution" "static" {
+  provider = aws.us_east_1
+  enabled  = true
+  comment  = "${var.name_prefix} static assets CDN"
+  aliases  = ["static.${var.domain_name}"]
 
   origin {
     domain_name              = aws_s3_bucket.static.bucket_regional_domain_name
-    origin_id                = "S3-${var.name_prefix}-static"
-    origin_access_control_id = aws_cloudfront_origin_access_control.this.id
+    origin_id                = "S3StaticOrigin"
+    origin_access_control_id = aws_cloudfront_origin_access_control.static.id
   }
 
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "S3-${var.name_prefix}-static"
+    target_origin_id       = "S3StaticOrigin"
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
 
@@ -92,15 +95,18 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = var.acm_certificate_arn == "" ? true : false
-    acm_certificate_arn            = var.acm_certificate_arn != "" ? var.acm_certificate_arn : null
-    ssl_support_method             = var.acm_certificate_arn != "" ? "sni-only" : null
-    minimum_protocol_version       = "TLSv1.2_2021"
+    acm_certificate_arn      = var.acm_certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
-  web_acl_id = var.waf_web_acl_arn != "" ? var.waf_web_acl_arn : null
+  web_acl_id = var.waf_web_acl_arn
+
+  logging_config {
+    bucket          = var.cloudfront_logs_bucket
+    include_cookies = false
+    prefix          = "cloudfront/"
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-cdn" })
-
-  depends_on = [aws_s3_bucket_policy.static]
 }

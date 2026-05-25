@@ -4,18 +4,10 @@ terraform {
   }
 }
 
-# X-Ray Group for distributed tracing
-resource "aws_xray_group" "this" {
-  group_name        = "${var.name_prefix}-app"
-  filter_expression = "service(\"${var.name_prefix}\")"
-  tags              = merge(var.tags, { Name = "${var.name_prefix}-xray-group" })
-}
-
-# X-Ray sampling rule
-resource "aws_xray_sampling_rule" "this" {
-  rule_name      = "${var.name_prefix}-sampling"
-  priority       = 9000
-  version        = 1
+# X-Ray sampling rules
+resource "aws_xray_sampling_rule" "default" {
+  rule_name      = "${var.name_prefix}-default"
+  priority       = 10000
   reservoir_size = 5
   fixed_rate     = 0.05
   url_path       = "*"
@@ -24,59 +16,85 @@ resource "aws_xray_sampling_rule" "this" {
   service_type   = "*"
   service_name   = "*"
   resource_arn   = "*"
-  tags           = var.tags
+  version        = 1
 }
 
-# Kinesis Firehose delivery stream → S3 for centralized log aggregation
+# Kinesis Firehose → S3 for centralised log aggregation
+resource "aws_s3_bucket" "logs" {
+  bucket        = var.logs_bucket_name
+  force_destroy = false
+  tags          = merge(var.tags, { Name = var.logs_bucket_name })
+}
+
+resource "aws_s3_bucket_public_access_block" "logs" {
+  bucket                  = aws_s3_bucket.logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+  rule {
+    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+  }
+}
+
 resource "aws_iam_role" "firehose" {
   name = "${var.name_prefix}-firehose-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Principal = { Service = "firehose.amazonaws.com" }, Action = "sts:AssumeRole" }]
+    Statement = [{ Action = "sts:AssumeRole" Effect = "Allow" Principal = { Service = "firehose.amazonaws.com" } }]
   })
 }
 
 resource "aws_iam_role_policy" "firehose" {
-  role = aws_iam_role.firehose.name
+  role = aws_iam_role.firehose.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:PutObject", "s3:PutObjectAcl", "s3:GetBucketLocation", "s3:ListBucket"]
-      Resource = [var.log_archive_bucket_arn, "${var.log_archive_bucket_arn}/*"]
+      Effect = "Allow"
+      Action = ["s3:AbortMultipartUpload", "s3:GetBucketLocation", "s3:GetObject", "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:PutObject"]
+      Resource = [aws_s3_bucket.logs.arn, "${aws_s3_bucket.logs.arn}/*"]
     }]
   })
 }
 
 resource "aws_kinesis_firehose_delivery_stream" "logs" {
-  name        = "${var.name_prefix}-log-stream"
+  name        = "${var.name_prefix}-log-delivery"
   destination = "extended_s3"
 
   extended_s3_configuration {
-    role_arn            = aws_iam_role.firehose.arn
-    bucket_arn          = var.log_archive_bucket_arn
-    prefix              = "app-logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
-    error_output_prefix = "errors/!{firehose:error-output-type}/"
-    buffering_size      = 64
-    buffering_interval  = 300
-    compression_format  = "GZIP"
+    role_arn           = aws_iam_role.firehose.arn
+    bucket_arn         = aws_s3_bucket.logs.arn
+    prefix             = "logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+    error_output_prefix = "errors/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/!{firehose:error-output-type}/"
+    buffering_size     = 64
+    buffering_interval = 300
+    compression_format = "GZIP"
   }
 
-  tags = merge(var.tags, { Name = "${var.name_prefix}-log-stream" })
+  tags = var.tags
 }
 
-# Athena database + workgroup for log querying
+# Athena for SQL querying over S3 logs
 resource "aws_athena_workgroup" "logs" {
   name = "${var.name_prefix}-logs"
+
   configuration {
+    enforce_workgroup_configuration    = true
+    publish_cloudwatch_metrics_enabled = true
+
     result_configuration {
-      output_location = "s3://${var.athena_results_bucket}/athena-results/"
+      output_location = "s3://${aws_s3_bucket.logs.bucket}/athena-results/"
     }
   }
-  tags = merge(var.tags, { Name = "${var.name_prefix}-athena-workgroup" })
+
+  tags = var.tags
 }
 
-# CloudWatch Dashboard — MAANG single-pane-of-glass
+# CloudWatch Dashboard
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.name_prefix}-operations"
 
@@ -85,73 +103,73 @@ resource "aws_cloudwatch_dashboard" "main" {
       {
         type = "metric"
         properties = {
-          title  = "ALB 5xx Error Rate"
-          metrics = [["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", var.alb_arn_suffix]]
+          title  = "ALB 5xx Errors"
           period = 300
           stat   = "Sum"
-          view   = "timeSeries"
+          metrics = [["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", var.alb_arn_suffix]]
         }
       },
       {
         type = "metric"
         properties = {
-          title  = "ALB Response Time p50/p95/p99"
-          metrics = [
-            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.alb_arn_suffix, { stat = "p50", label = "p50" }],
-            ["...", { stat = "p95", label = "p95" }],
-            ["...", { stat = "p99", label = "p99" }]
-          ]
-          period = 60
-          view   = "timeSeries"
+          title  = "ALB p99 Latency (s)"
+          period = 300
+          stat   = "p99"
+          metrics = [["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.alb_arn_suffix]]
         }
       },
       {
         type = "metric"
         properties = {
-          title  = "ASG Instance Count"
-          metrics = [
-            ["AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", var.web_asg_name, { label = "Web"}],
-            ["AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", var.app_asg_name, { label = "App"}]
-          ]
-          period = 60
+          title  = "Web ASG CPU"
+          period = 300
           stat   = "Average"
-          view   = "timeSeries"
+          metrics = [["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.web_asg_name]]
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          title  = "App ASG CPU"
+          period = 300
+          stat   = "Average"
+          metrics = [["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.app_asg_name]]
         }
       },
       {
         type = "metric"
         properties = {
           title  = "Aurora DB Connections"
+          period = 300
+          stat   = "Average"
           metrics = [["AWS/RDS", "DatabaseConnections", "DBClusterIdentifier", var.aurora_cluster_id]]
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          title  = "Aurora Replica Lag (ms)"
           period = 60
           stat   = "Maximum"
-          view   = "timeSeries"
+          metrics = [["AWS/RDS", "AuroraGlobalDBReplicationLag"]]
         }
       },
       {
         type = "metric"
         properties = {
-          title  = "Aurora Read/Write IOPS"
-          metrics = [
-            ["AWS/RDS", "ReadIOPS",  "DBClusterIdentifier", var.aurora_cluster_id, { label = "Read IOPS"}],
-            ["AWS/RDS", "WriteIOPS", "DBClusterIdentifier", var.aurora_cluster_id, { label = "Write IOPS"}]
-          ]
-          period = 60
+          title  = "DynamoDB Throttled Requests"
+          period = 300
           stat   = "Sum"
-          view   = "timeSeries"
+          metrics = [["AWS/DynamoDB", "ThrottledRequests", "TableName", var.dynamodb_table_name]]
         }
       },
       {
         type = "metric"
         properties = {
-          title  = "DynamoDB Consumed Capacity"
-          metrics = [
-            ["AWS/DynamoDB", "ConsumedReadCapacityUnits",  "TableName", var.dynamodb_table_name, { label = "Read"}],
-            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", var.dynamodb_table_name, { label = "Write"}]
-          ]
-          period = 60
+          title  = "WAF Blocked Requests"
+          period = 300
           stat   = "Sum"
-          view   = "timeSeries"
+          metrics = [["AWS/WAFV2", "BlockedRequests", "WebACL", var.waf_acl_name, "Region", var.region, "Rule", "ALL"]]
         }
       }
     ]

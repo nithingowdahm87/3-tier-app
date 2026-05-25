@@ -2,11 +2,12 @@ provider "aws" {
   region = var.primary_region
 }
 
-# MAANG: Customer-managed KMS key for state bucket encryption
+# Customer-managed KMS key for state bucket + lock table
 resource "aws_kms_key" "tfstate" {
   description             = "KMS key for Terraform state bucket encryption"
-  deletion_window_in_days = 30
+  deletion_window_in_days = 10
   enable_key_rotation     = true
+
   tags = {
     Name      = "terraform-state-kms"
     ManagedBy = "terraform"
@@ -21,6 +22,7 @@ resource "aws_kms_alias" "tfstate" {
 resource "aws_s3_bucket" "tfstate" {
   bucket        = var.state_bucket_name
   force_destroy = false
+
   tags = {
     Name        = "terraform-state"
     Environment = "prod"
@@ -40,6 +42,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
       sse_algorithm     = "aws:kms"
       kms_master_key_id = aws_kms_key.tfstate.arn
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -51,27 +54,25 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
   restrict_public_buckets = true
 }
 
-# MAANG: Enforce HTTPS-only access to state bucket
-resource "aws_s3_bucket_policy" "tfstate" {
+# HTTPS-only bucket policy
+resource "aws_s3_bucket_policy" "tfstate_https_only" {
   bucket = aws_s3_bucket.tfstate.id
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "DenyHTTP"
+        Sid       = "DenyNonHTTPS"
         Effect    = "Deny"
         Principal = "*"
         Action    = "s3:*"
-        Resource  = [aws_s3_bucket.tfstate.arn, "${aws_s3_bucket.tfstate.arn}/*"]
-        Condition = { Bool = { "aws:SecureTransport" = "false" } }
-      },
-      {
-        Sid       = "DenyNonKMSUploads"
-        Effect    = "Deny"
-        Principal = "*"
-        Action    = "s3:PutObject"
-        Resource  = "${aws_s3_bucket.tfstate.arn}/*"
-        Condition = { StringNotEquals = { "s3:x-amz-server-side-encryption" = "aws:kms" } }
+        Resource  = [
+          aws_s3_bucket.tfstate.arn,
+          "${aws_s3_bucket.tfstate.arn}/*"
+        ]
+        Condition = {
+          Bool = { "aws:SecureTransport" = "false" }
+        }
       }
     ]
   })
@@ -92,6 +93,8 @@ resource "aws_dynamodb_table" "tflock" {
     kms_key_arn = aws_kms_key.tfstate.arn
   }
 
+  point_in_time_recovery { enabled = true }
+
   tags = {
     Name        = "terraform-state-lock"
     Environment = "prod"
@@ -99,6 +102,6 @@ resource "aws_dynamodb_table" "tflock" {
   }
 }
 
-output "state_bucket" { value = aws_s3_bucket.tfstate.bucket }
-output "lock_table"   { value = aws_dynamodb_table.tflock.name }
-output "kms_key_arn"  { value = aws_kms_key.tfstate.arn }
+output "state_bucket"  { value = aws_s3_bucket.tfstate.bucket }
+output "lock_table"    { value = aws_dynamodb_table.tflock.name }
+output "kms_key_arn"   { value = aws_kms_key.tfstate.arn }

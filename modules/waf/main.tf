@@ -4,14 +4,14 @@ terraform {
   }
 }
 
-# WAF Web ACL with AWS Managed Rules + rate limiting
+# WAF v2 Web ACL with OWASP managed rules + rate limiting
 resource "aws_wafv2_web_acl" "this" {
-  name        = "${var.name_prefix}-waf"
-  description = "MAANG-level WAF: AWS Managed Rules + rate limiting"
-  scope       = "REGIONAL"
+  name  = "${var.name_prefix}-web-acl"
+  scope = "REGIONAL"
 
   default_action { allow {} }
 
+  # AWS Managed Rules — Common Rule Set (OWASP Top 10)
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
     priority = 1
@@ -29,6 +29,7 @@ resource "aws_wafv2_web_acl" "this" {
     }
   }
 
+  # AWS Managed Rules — SQL Injection
   rule {
     name     = "AWSManagedRulesSQLiRuleSet"
     priority = 2
@@ -46,6 +47,7 @@ resource "aws_wafv2_web_acl" "this" {
     }
   }
 
+  # AWS Managed Rules — Known Bad Inputs
   rule {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
     priority = 3
@@ -63,13 +65,14 @@ resource "aws_wafv2_web_acl" "this" {
     }
   }
 
+  # Rate limiting — 2000 requests per 5 minutes per IP
   rule {
-    name     = "RateLimitRule"
+    name     = "RateLimitPerIP"
     priority = 4
     action { block {} }
     statement {
       rate_based_statement {
-        limit              = var.rate_limit
+        limit              = 2000
         aggregate_key_type = "IP"
       }
     }
@@ -82,28 +85,33 @@ resource "aws_wafv2_web_acl" "this" {
 
   visibility_config {
     cloudwatch_metrics_enabled = true
-    metric_name                = "${var.name_prefix}-waf"
+    metric_name                = "${var.name_prefix}-web-acl"
     sampled_requests_enabled   = true
   }
 
-  tags = merge(var.tags, { Name = "${var.name_prefix}-waf" })
+  tags = merge(var.tags, { Name = "${var.name_prefix}-web-acl" })
 }
 
-# Associate WAF with ALB
+# Associate WAF with the external ALB
 resource "aws_wafv2_web_acl_association" "alb" {
   resource_arn = var.alb_arn
   web_acl_arn  = aws_wafv2_web_acl.this.arn
 }
 
-# Shield Advanced subscription (account-level, enables DDoS protection)
+# WAF logging to S3 (via Kinesis Firehose)
+resource "aws_wafv2_web_acl_logging_configuration" "this" {
+  log_destination_configs = [var.waf_log_destination_arn]
+  resource_arn            = aws_wafv2_web_acl.this.arn
+}
+
+# Shield Advanced protection on ALB
 resource "aws_shield_protection" "alb" {
-  count        = var.enable_shield_advanced ? 1 : 0
   name         = "${var.name_prefix}-alb-shield"
   resource_arn = var.alb_arn
 }
 
+# Shield Advanced protection on NLB
 resource "aws_shield_protection" "nlb" {
-  count        = var.enable_shield_advanced ? 1 : 0
   name         = "${var.name_prefix}-nlb-shield"
   resource_arn = var.nlb_arn
 }
