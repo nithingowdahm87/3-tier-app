@@ -31,13 +31,19 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# FIX: add CloudWatch agent policy so instances can ship logs/metrics
+resource "aws_iam_role_policy_attachment" "cloudwatch" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "${var.name_prefix}-${var.role}-profile"
   role = aws_iam_role.ec2.name
 }
 
 resource "aws_launch_template" "this" {
-  name_prefix   = "${var.name_prefix}-lt-"
+  name_prefix   = "${var.name_prefix}-${var.role}-lt-"
   image_id      = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
   key_name      = var.key_name
@@ -59,15 +65,26 @@ resource "aws_launch_template" "this" {
   }
 
   metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
   user_data = base64encode(var.user_data)
 
+  # FIX: tag both the instance and its EBS volumes
   tag_specifications {
     resource_type = "instance"
     tags          = merge(var.tags, { Name = "${var.name_prefix}-${var.role}" })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags          = merge(var.tags, { Name = "${var.name_prefix}-${var.role}-vol" })
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -76,9 +93,19 @@ resource "aws_autoscaling_group" "this" {
   vpc_zone_identifier = var.subnet_ids
   target_group_arns   = var.target_group_arns
   health_check_type   = "ELB"
-  min_size            = var.min_size
-  max_size            = var.max_size
-  desired_capacity    = var.desired_capacity
+  # FIX: add grace period so new instances pass health checks before being killed
+  health_check_grace_period = 300
+  min_size                  = var.min_size
+  max_size                  = var.max_size
+  desired_capacity          = var.desired_capacity
+
+  # FIX: graceful instance refresh on launch template changes
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+  }
 
   mixed_instances_policy {
     launch_template {

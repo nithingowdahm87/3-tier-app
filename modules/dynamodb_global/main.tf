@@ -22,8 +22,16 @@ resource "aws_dynamodb_table" "this" {
     enabled = true
   }
 
+  # FIX: enable server-side encryption with AWS-managed key
+  server_side_encryption {
+    enabled = true
+  }
+
+  # FIX: enable deletion protection
+  deletion_protection_enabled = true
+
   replica {
-    region_name = var.replica_region
+    region_name            = var.replica_region
     point_in_time_recovery = true
   }
 

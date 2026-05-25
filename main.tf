@@ -6,10 +6,10 @@ locals {
   }
 }
 
-# ─── Primary Region ───────────────────────────────────────────────────────────
+# ─── Primary Network ──────────────────────────────────────────────────────────
 
 module "network_primary" {
-  source = "./modules/network"
+  source    = "./modules/network"
   providers = { aws = aws.primary }
 
   name_prefix = "${var.project_name}-${var.environment}-primary"
@@ -19,7 +19,7 @@ module "network_primary" {
 }
 
 module "network_secondary" {
-  source = "./modules/network"
+  source    = "./modules/network"
   providers = { aws = aws.secondary }
 
   name_prefix = "${var.project_name}-${var.environment}-secondary"
@@ -28,8 +28,10 @@ module "network_secondary" {
   tags        = local.common_tags
 }
 
+# ─── Security Groups ──────────────────────────────────────────────────────────
+
 module "security_primary" {
-  source = "./modules/security"
+  source    = "./modules/security"
   providers = { aws = aws.primary }
 
   name_prefix          = "${var.project_name}-${var.environment}-primary"
@@ -39,7 +41,7 @@ module "security_primary" {
 }
 
 module "security_secondary" {
-  source = "./modules/security"
+  source    = "./modules/security"
   providers = { aws = aws.secondary }
 
   name_prefix          = "${var.project_name}-${var.environment}-secondary"
@@ -48,22 +50,24 @@ module "security_secondary" {
   tags                 = local.common_tags
 }
 
+# ─── Load Balancers ───────────────────────────────────────────────────────────
+
 module "alb_primary" {
-  source = "./modules/alb"
+  source    = "./modules/alb"
   providers = { aws = aws.primary }
 
-  name_prefix          = "${var.project_name}-${var.environment}-primary"
-  vpc_id               = module.network_primary.vpc_id
-  public_subnet_ids    = module.network_primary.public_subnet_ids
-  private_subnet_ids   = module.network_primary.private_subnet_ids
-  alb_sg_id            = module.security_primary.alb_sg_id
-  internal_alb_sg_id   = module.security_primary.internal_alb_sg_id
-  acm_certificate_arn  = var.primary_acm_certificate_arn
-  tags                 = local.common_tags
+  name_prefix         = "${var.project_name}-${var.environment}-primary"
+  vpc_id              = module.network_primary.vpc_id
+  public_subnet_ids   = module.network_primary.public_subnet_ids
+  private_subnet_ids  = module.network_primary.private_subnet_ids
+  alb_sg_id           = module.security_primary.alb_sg_id
+  internal_alb_sg_id  = module.security_primary.internal_alb_sg_id
+  acm_certificate_arn = var.primary_acm_certificate_arn
+  tags                = local.common_tags
 }
 
 module "nlb_primary" {
-  source = "./modules/nlb"
+  source    = "./modules/nlb"
   providers = { aws = aws.primary }
 
   name_prefix       = "${var.project_name}-${var.environment}-primary"
@@ -73,8 +77,10 @@ module "nlb_primary" {
   tags              = local.common_tags
 }
 
+# ─── Bastion ──────────────────────────────────────────────────────────────────
+
 module "bastion_primary" {
-  source = "./modules/bastion"
+  source    = "./modules/bastion"
   providers = { aws = aws.primary }
 
   name_prefix      = "${var.project_name}-${var.environment}-primary"
@@ -85,45 +91,49 @@ module "bastion_primary" {
   tags             = local.common_tags
 }
 
+# ─── Compute (Web + App ASGs) ─────────────────────────────────────────────────
+
 module "web_asg_primary" {
-  source = "./modules/compute"
+  source    = "./modules/compute"
   providers = { aws = aws.primary }
 
-  name_prefix           = "${var.project_name}-${var.environment}-primary"
-  role                  = "web"
-  instance_type         = var.web_instance_type
+  name_prefix            = "${var.project_name}-${var.environment}-primary"
+  role                   = "web"
+  instance_type          = var.web_instance_type
   fallback_instance_type = var.web_fallback_instance_type
-  key_name              = var.key_name
-  security_group_ids    = [module.security_primary.web_sg_id]
-  subnet_ids            = module.network_primary.private_subnet_ids
-  target_group_arns     = [module.alb_primary.web_target_group_arn]
-  min_size              = var.web_min_size
-  max_size              = var.web_max_size
-  desired_capacity      = var.web_desired_capacity
+  key_name               = var.key_name
+  security_group_ids     = [module.security_primary.web_sg_id]
+  subnet_ids             = module.network_primary.private_subnet_ids
+  target_group_arns      = [module.alb_primary.web_target_group_arn]
+  min_size               = var.web_min_size
+  max_size               = var.web_max_size
+  desired_capacity       = var.web_desired_capacity
   on_demand_base_capacity = var.on_demand_base_capacity
-  user_data             = var.web_user_data
-  tags                  = local.common_tags
+  user_data              = var.web_user_data
+  tags                   = local.common_tags
 }
 
 module "app_asg_primary" {
-  source = "./modules/compute"
+  source    = "./modules/compute"
   providers = { aws = aws.primary }
 
-  name_prefix           = "${var.project_name}-${var.environment}-primary"
-  role                  = "app"
-  instance_type         = var.app_instance_type
+  name_prefix            = "${var.project_name}-${var.environment}-primary"
+  role                   = "app"
+  instance_type          = var.app_instance_type
   fallback_instance_type = var.app_fallback_instance_type
-  key_name              = var.key_name
-  security_group_ids    = [module.security_primary.app_sg_id]
-  subnet_ids            = module.network_primary.private_subnet_ids
-  target_group_arns     = [module.alb_primary.app_target_group_arn]
-  min_size              = var.app_min_size
-  max_size              = var.app_max_size
-  desired_capacity      = var.app_desired_capacity
+  key_name               = var.key_name
+  security_group_ids     = [module.security_primary.app_sg_id]
+  subnet_ids             = module.network_primary.private_subnet_ids
+  target_group_arns      = [module.alb_primary.app_target_group_arn]
+  min_size               = var.app_min_size
+  max_size               = var.app_max_size
+  desired_capacity       = var.app_desired_capacity
   on_demand_base_capacity = var.on_demand_base_capacity
-  user_data             = var.app_user_data
-  tags                  = local.common_tags
+  user_data              = var.app_user_data
+  tags                   = local.common_tags
 }
+
+# ─── Database (Aurora Global) ─────────────────────────────────────────────────
 
 module "aurora" {
   source = "./modules/aurora_global"
@@ -132,19 +142,21 @@ module "aurora" {
     aws.secondary = aws.secondary
   }
 
-  name_prefix              = "${var.project_name}-${var.environment}"
-  primary_db_subnet_ids    = module.network_primary.db_subnet_ids
-  secondary_db_subnet_ids  = module.network_secondary.db_subnet_ids
-  primary_aurora_sg_id     = module.security_primary.aurora_sg_id
-  secondary_aurora_sg_id   = module.security_secondary.aurora_sg_id
-  database_name            = var.db_name
-  master_username          = var.db_username
-  master_password          = var.db_password
-  tags                     = local.common_tags
+  name_prefix             = "${var.project_name}-${var.environment}"
+  primary_db_subnet_ids   = module.network_primary.db_subnet_ids
+  secondary_db_subnet_ids = module.network_secondary.db_subnet_ids
+  primary_aurora_sg_id    = module.security_primary.aurora_sg_id
+  secondary_aurora_sg_id  = module.security_secondary.aurora_sg_id
+  database_name           = var.db_name
+  master_username         = var.db_username
+  master_password         = var.db_password
+  tags                    = local.common_tags
 }
 
+# ─── DynamoDB Global Table ────────────────────────────────────────────────────
+
 module "dynamodb" {
-  source = "./modules/dynamodb_global"
+  source    = "./modules/dynamodb_global"
   providers = { aws = aws.primary }
 
   table_name     = "${var.project_name}-${var.environment}-sessions"
@@ -153,14 +165,19 @@ module "dynamodb" {
   tags           = local.common_tags
 }
 
+# ─── AWS Backup ───────────────────────────────────────────────────────────────
+# FIX: resource_arns now uses a proper data-driven ARN list, not a conditional string hack
+
 module "backup_primary" {
-  source = "./modules/backup"
+  source    = "./modules/backup"
   providers = { aws = aws.primary }
 
-  name_prefix  = "${var.project_name}-${var.environment}-primary"
-  resource_arns = [module.aurora.primary_cluster_endpoint != "" ? "arn:aws:rds:${var.primary_region}:*:cluster:${var.project_name}-${var.environment}-aurora-primary" : ""]
-  tags         = local.common_tags
+  name_prefix   = "${var.project_name}-${var.environment}-primary"
+  resource_arns = [module.aurora.primary_cluster_arn]
+  tags          = local.common_tags
 }
+
+# ─── VPC Peering ──────────────────────────────────────────────────────────────
 
 module "vpc_peering" {
   source = "./modules/peering"
@@ -179,4 +196,34 @@ module "vpc_peering" {
   requester_cidr           = var.primary_vpc_cidr
   peer_cidr                = var.secondary_vpc_cidr
   tags                     = local.common_tags
+}
+
+# ─── ASG CPU Scaling Policies ─────────────────────────────────────────────────
+
+resource "aws_autoscaling_policy" "web_cpu" {
+  provider               = aws.primary
+  name                   = "${var.project_name}-${var.environment}-primary-web-cpu-tracking"
+  autoscaling_group_name = module.web_asg_primary.asg_name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60.0
+  }
+}
+
+resource "aws_autoscaling_policy" "app_cpu" {
+  provider               = aws.primary
+  name                   = "${var.project_name}-${var.environment}-primary-app-cpu-tracking"
+  autoscaling_group_name = module.app_asg_primary.asg_name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60.0
+  }
 }

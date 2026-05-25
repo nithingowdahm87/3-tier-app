@@ -4,8 +4,8 @@ resource "aws_iam_role" "backup" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "backup.amazonaws.com" }
     }]
   })
@@ -14,6 +14,12 @@ resource "aws_iam_role" "backup" {
 resource "aws_iam_role_policy_attachment" "backup" {
   role       = aws_iam_role.backup.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+}
+
+# FIX: add restore policy so AWS Backup can also restore resources
+resource "aws_iam_role_policy_attachment" "backup_restore" {
+  role       = aws_iam_role.backup.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
 }
 
 resource "aws_backup_vault" "this" {
@@ -31,6 +37,17 @@ resource "aws_backup_plan" "this" {
 
     lifecycle {
       delete_after = 7
+    }
+  }
+
+  # FIX: add a weekly backup with longer retention for compliance
+  rule {
+    rule_name         = "weekly-backup"
+    target_vault_name = aws_backup_vault.this.name
+    schedule          = "cron(0 5 ? * 1 *)"
+
+    lifecycle {
+      delete_after = 30
     }
   }
 
