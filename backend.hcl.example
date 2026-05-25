@@ -1,9 +1,13 @@
-# Partial backend configuration — copy to backend.hcl and fill in real values.
-# Run: terraform init -backend-config=backend.hcl
-# NEVER commit backend.hcl — it is gitignored.
+# Partial backend configuration.
+# Usage:
+#   cp backend.hcl.example backend.hcl
+#   # Fill in your real values in backend.hcl
+#   terraform init -backend-config=backend.hcl
+#
+# backend.hcl (with real values) is gitignored — NEVER commit it.
+# Pre-requisite: run bootstrap-state/ first to create the S3 bucket and DynamoDB lock table.
 
-bucket         = "REPLACE_WITH_YOUR_STATE_BUCKET"
+bucket         = "REPLACE_WITH_YOUR_STATE_BUCKET"   # e.g. myapp-prod-tfstate-123456789012
 region         = "us-east-1"
-key            = "prod/terraform.tfstate"
-dynamodb_table = "REPLACE_WITH_YOUR_LOCK_TABLE"
+dynamodb_table = "REPLACE_WITH_YOUR_LOCK_TABLE"     # e.g. myapp-prod-tfstate-lock
 encrypt        = true

@@ -10,54 +10,71 @@ aws_account_id = "123456789012"
 
 primary_vpc_cidr   = "10.0.0.0/16"
 secondary_vpc_cidr = "10.1.0.0/16"
-az_count           = 2
 
-# Restrict to YOUR office/VPN IP only — never 0.0.0.0/0
-bastion_allowed_cidr = "YOUR_IP/32"
+# Use 3 AZs for MAANG-grade HA
+az_count = 3
+
+# SSM Session Manager is recommended (bastion_enabled = false).
+# If you must use a bastion, set bastion_enabled = true and restrict the CIDR.
+bastion_enabled      = false
+bastion_allowed_cidr = "YOUR_OFFICE_OR_VPN_IP/32" # NEVER use 0.0.0.0/0
 
 # DNS — must be a domain hosted in Route53
 domain_name    = "app.example.com"
 hosted_zone_id = "Z1234567890ABC"
 
-# Compute
+# CloudFront ACM certificate — MUST be pre-created in us-east-1.
+# Bootstrap (one-time, before first terraform apply):
+#   aws acm request-certificate \
+#     --domain-name "static.app.example.com" \
+#     --subject-alternative-names "app.example.com" "www.app.example.com" \
+#     --validation-method DNS \
+#     --region us-east-1
+#   Then complete DNS validation and paste the resulting ARN below.
+cloudfront_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
+
+# Compute — use c5/m5 for prod, t3 for non-prod
 web_instance_type          = "t3.small"
 web_fallback_instance_type = "t3.medium"
-web_min_size               = 1
-web_max_size               = 4
-web_desired_capacity       = 2
+web_min_size               = 2
+web_max_size               = 10
+web_desired_capacity       = 3
 
 app_instance_type          = "t3.small"
 app_fallback_instance_type = "t3.medium"
-app_min_size               = 1
-app_max_size               = 4
-app_desired_capacity       = 2
+app_min_size               = 2
+app_max_size               = 10
+app_desired_capacity       = 3
 
 # Database
 db_name     = "appdb"
 db_username = "admin"
-# After first apply, seed the Aurora password:
+# Aurora password is fetched from Secrets Manager — NOT set here.
+# Bootstrap (one-time, before full apply):
+#   terraform apply -target=module.aurora_secret
 #   aws secretsmanager put-secret-value \
 #     --secret-id /prod/aurora/master_password \
 #     --secret-string '{"password": "YourStrongPassword123!"}'
 
 # ElastiCache Redis
-redis_node_type  = "cache.t4g.small"
-redis_num_nodes  = 2
-# Generate with: openssl rand -base64 32
-# Store in Secrets Manager, do NOT commit to tfvars
-redis_auth_token = "REPLACE_WITH_STRONG_RANDOM_TOKEN"
+# Use r7g.large for prod (memory-optimised). t4g.small is dev-only.
+redis_node_type = "cache.r7g.large"
+redis_num_nodes = 3
+# Redis AUTH token is fetched from Secrets Manager — NOT set here.
+# Bootstrap (one-time, before full apply):
+#   terraform apply -target=module.redis_secret
+#   aws secretsmanager put-secret-value \
+#     --secret-id /prod/redis/auth_token \
+#     --secret-string "{\"token\": \"$(openssl rand -base64 32)\"}"
 
 # Alerting
-alert_email                      = "your-team@example.com"
+alert_email                      = "your-oncall-team@example.com"
 alb_5xx_threshold                = 10
 aurora_max_connections_threshold = 800
 
 # S3 bucket names — must be globally unique across all AWS accounts
-cloudtrail_bucket_name     = "myapp-prod-cloudtrail-logs-ACCOUNTID"
-config_bucket_name         = "myapp-prod-config-snapshots-ACCOUNTID"
-logs_bucket_name           = "myapp-prod-centralised-logs-ACCOUNTID"
-static_assets_bucket_name  = "myapp-prod-static-assets-ACCOUNTID"
-
-# CloudFront ACM certificate — MUST be created in us-east-1 regardless of primary region
-# Create with: aws acm request-certificate --domain-name static.app.example.com --validation-method DNS --region us-east-1
-cloudfront_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
+# Recommended pattern: <project>-<env>-<purpose>-<account-id>
+cloudtrail_bucket_name    = "myapp-prod-cloudtrail-logs-123456789012"
+config_bucket_name        = "myapp-prod-config-snapshots-123456789012"
+logs_bucket_name          = "myapp-prod-centralised-logs-123456789012"
+static_assets_bucket_name = "myapp-prod-static-assets-123456789012"

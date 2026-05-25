@@ -8,6 +8,11 @@ variable "environment" {
   description = "Deployment environment (e.g. prod, staging)"
   type        = string
   default     = "prod"
+
+  validation {
+    condition     = contains(["prod", "staging", "dev"], var.environment)
+    error_message = "environment must be one of: prod, staging, dev."
+  }
 }
 
 variable "primary_region" {
@@ -25,29 +30,64 @@ variable "secondary_region" {
 variable "aws_account_id" {
   description = "AWS Account ID"
   type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be a 12-digit number."
+  }
 }
 
 variable "primary_vpc_cidr" {
   description = "CIDR block for the primary VPC"
   type        = string
   default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.primary_vpc_cidr, 0))
+    error_message = "primary_vpc_cidr must be a valid CIDR block."
+  }
 }
 
 variable "secondary_vpc_cidr" {
   description = "CIDR block for the secondary VPC"
   type        = string
   default     = "10.1.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.secondary_vpc_cidr, 0))
+    error_message = "secondary_vpc_cidr must be a valid CIDR block."
+  }
 }
 
 variable "az_count" {
-  description = "Number of availability zones to use"
+  description = "Number of availability zones to use (min 3 for MAANG-grade HA)"
   type        = number
-  default     = 2
+  default     = 3
+
+  validation {
+    condition     = var.az_count >= 2 && var.az_count <= 6
+    error_message = "az_count must be between 2 and 6. Use 3 for production."
+  }
+}
+
+# ─── Bastion (legacy — prefer SSM Session Manager for zero-attack-surface access) ───
+# To use SSM instead: set bastion_enabled = false and ensure VPC endpoints for
+# ssm, ssmmessages, ec2messages are deployed (already in modules/vpc_endpoints).
+variable "bastion_enabled" {
+  description = "Set to false to disable bastion and use SSM Session Manager instead (recommended for prod)"
+  type        = bool
+  default     = false
 }
 
 variable "bastion_allowed_cidr" {
-  description = "CIDR allowed to SSH to bastion. MUST be set explicitly — never use 0.0.0.0/0"
+  description = "CIDR allowed to SSH to bastion. MUST be set explicitly — never use 0.0.0.0/0. Ignored when bastion_enabled = false."
   type        = string
+  default     = "10.0.0.0/32" # safe dummy; only used when bastion_enabled = true
+
+  validation {
+    condition     = var.bastion_allowed_cidr != "0.0.0.0/0"
+    error_message = "bastion_allowed_cidr must never be 0.0.0.0/0. Use your office/VPN CIDR."
+  }
 }
 
 variable "bastion_instance_type" {
@@ -60,6 +100,11 @@ variable "bastion_instance_type" {
 variable "domain_name" {
   description = "Primary domain name (e.g. app.example.com). Must exist in the Route53 hosted zone."
   type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9\\-\\.]+\\.[a-z]{2,}$", var.domain_name))
+    error_message = "domain_name must be a valid fully-qualified domain name."
+  }
 }
 
 variable "hosted_zone_id" {
@@ -67,21 +112,87 @@ variable "hosted_zone_id" {
   type        = string
 }
 
+# CloudFront ACM certificate (must be in us-east-1)
+# IMPORTANT: This cert MUST be created before the main apply.
+# Bootstrap steps (one-time):
+#   1. aws acm request-certificate --domain-name "static.YOUR_DOMAIN" \
+#        --subject-alternative-names "YOUR_DOMAIN" "www.YOUR_DOMAIN" \
+#        --validation-method DNS --region us-east-1
+#   2. Complete DNS validation in Route53
+#   3. Set the resulting ARN in terraform.tfvars as cloudfront_acm_certificate_arn
+variable "cloudfront_acm_certificate_arn" {
+  description = "ACM certificate ARN in us-east-1 for CloudFront. Must be created and validated before apply."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:acm:us-east-1:[0-9]{12}:certificate/.+", var.cloudfront_acm_certificate_arn))
+    error_message = "cloudfront_acm_certificate_arn must be a valid ACM cert ARN in us-east-1."
+  }
+}
+
 # Web ASG
-variable "web_instance_type"         { type = string; default = "t3.small" }
-variable "web_fallback_instance_type" { type = string; default = "t3.medium" }
-variable "web_min_size"               { type = number; default = 1 }
-variable "web_max_size"               { type = number; default = 4 }
-variable "web_desired_capacity"       { type = number; default = 2 }
-variable "web_user_data"              { type = string; default = "#!/bin/bash\napt-get update -y\n" }
+variable "web_instance_type" {
+  type        = string
+  default     = "t3.small"
+  description = "Primary instance type for web tier ASG"
+}
+variable "web_fallback_instance_type" {
+  type        = string
+  default     = "t3.medium"
+  description = "Spot fallback instance type for web tier ASG"
+}
+variable "web_min_size" {
+  type        = number
+  default     = 2
+  description = "Minimum instances in web ASG (>=2 for HA)"
+}
+variable "web_max_size" {
+  type        = number
+  default     = 10
+  description = "Maximum instances in web ASG"
+}
+variable "web_desired_capacity" {
+  type        = number
+  default     = 3
+  description = "Desired instances in web ASG"
+}
+variable "web_user_data" {
+  type        = string
+  default     = "#!/bin/bash\nset -euo pipefail\napt-get update -y\napt-get install -y amazon-ssm-agent awscli\nsystemctl enable amazon-ssm-agent\nsystemctl start amazon-ssm-agent\n"
+  description = "User data script for web tier. Installs SSM agent by default."
+}
 
 # App ASG
-variable "app_instance_type"         { type = string; default = "t3.small" }
-variable "app_fallback_instance_type" { type = string; default = "t3.medium" }
-variable "app_min_size"               { type = number; default = 1 }
-variable "app_max_size"               { type = number; default = 4 }
-variable "app_desired_capacity"       { type = number; default = 2 }
-variable "app_user_data"              { type = string; default = "#!/bin/bash\napt-get update -y\n" }
+variable "app_instance_type" {
+  type        = string
+  default     = "t3.small"
+  description = "Primary instance type for app tier ASG"
+}
+variable "app_fallback_instance_type" {
+  type        = string
+  default     = "t3.medium"
+  description = "Spot fallback instance type for app tier ASG"
+}
+variable "app_min_size" {
+  type        = number
+  default     = 2
+  description = "Minimum instances in app ASG (>=2 for HA)"
+}
+variable "app_max_size" {
+  type        = number
+  default     = 10
+  description = "Maximum instances in app ASG"
+}
+variable "app_desired_capacity" {
+  type        = number
+  default     = 3
+  description = "Desired instances in app ASG"
+}
+variable "app_user_data" {
+  type        = string
+  default     = "#!/bin/bash\nset -euo pipefail\napt-get update -y\napt-get install -y amazon-ssm-agent awscli\nsystemctl enable amazon-ssm-agent\nsystemctl start amazon-ssm-agent\n"
+  description = "User data script for app tier. Installs SSM agent by default."
+}
 
 variable "on_demand_base_capacity" {
   description = "Minimum on-demand instances in ASG mixed policy"
@@ -90,8 +201,16 @@ variable "on_demand_base_capacity" {
 }
 
 # Database
-variable "db_name"     { type = string; default = "appdb" }
-variable "db_username" { type = string; default = "admin" }
+variable "db_name" {
+  type        = string
+  default     = "appdb"
+  description = "Aurora database name"
+}
+variable "db_username" {
+  type        = string
+  default     = "admin"
+  description = "Aurora master username"
+}
 variable "db_secret_name" {
   description = "Secrets Manager secret name for Aurora password — auto-derived from environment"
   type        = string
@@ -99,29 +218,39 @@ variable "db_secret_name" {
 }
 
 # ElastiCache Redis
+# IMPORTANT: redis_auth_token is fetched from Secrets Manager at plan time.
+# Seed the secret before first apply:
+#   aws secretsmanager put-secret-value \
+#     --secret-id /<environment>/redis/auth_token \
+#     --secret-string '{"token": "<openssl rand -base64 32 output>"}'
+# The secret is read via data source in main.tf — do NOT set this in tfvars.
 variable "redis_node_type" {
   description = "ElastiCache node type"
   type        = string
-  default     = "cache.t4g.small"
+  default     = "cache.r7g.large"
+  # r7g.large for prod (memory-optimised); t4g.small acceptable for dev only
 }
 
 variable "redis_num_nodes" {
-  description = "Number of Redis cache nodes (>=2 enables Multi-AZ)"
+  description = "Number of Redis cache nodes (>=2 enables Multi-AZ, >=3 recommended for prod)"
   type        = number
-  default     = 2
-}
+  default     = 3
 
-variable "redis_auth_token" {
-  description = "Redis AUTH token — generate with: openssl rand -base64 32"
-  type        = string
-  sensitive   = true
+  validation {
+    condition     = var.redis_num_nodes >= 2
+    error_message = "redis_num_nodes must be >= 2 to enable Multi-AZ."
+  }
 }
 
 # Alerting
 variable "alert_email" {
   description = "Email address to receive CloudWatch alarm and ops SNS notifications"
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("^[^@]+@[^@]+\\.[^@]+$", var.alert_email))
+    error_message = "alert_email must be a valid email address. Do not leave this empty in production."
+  }
 }
 
 variable "alb_5xx_threshold" {
@@ -155,11 +284,4 @@ variable "logs_bucket_name" {
 variable "static_assets_bucket_name" {
   description = "Globally unique S3 bucket name for CloudFront static assets"
   type        = string
-}
-
-# CloudFront ACM certificate (must be in us-east-1)
-variable "cloudfront_acm_certificate_arn" {
-  description = "ACM certificate ARN in us-east-1 for CloudFront (static.domain_name). Create manually or via bootstrap if your primary region is not us-east-1."
-  type        = string
-  default     = ""
 }
