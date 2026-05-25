@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    aws = {
+      source                = "hashicorp/aws"
+      configuration_aliases = [aws.primary, aws.secondary]
+    }
+  }
+}
+
 resource "aws_db_subnet_group" "primary" {
   provider   = aws.primary
   name       = "${var.name_prefix}-aurora-primary-subnet-group"
@@ -22,24 +31,25 @@ resource "aws_rds_global_cluster" "this" {
 }
 
 resource "aws_rds_cluster" "primary" {
-  provider                  = aws.primary
-  cluster_identifier        = "${var.name_prefix}-aurora-primary"
-  engine                    = var.engine
-  engine_mode               = "provisioned"
-  engine_version            = var.engine_version
-  global_cluster_identifier = aws_rds_global_cluster.this.id
-  database_name             = var.database_name
-  master_username           = var.master_username
-  master_password           = var.master_password
-  db_subnet_group_name      = aws_db_subnet_group.primary.name
-  vpc_security_group_ids    = [var.primary_aurora_sg_id]
-  backup_retention_period   = 7
-  preferred_backup_window   = "02:00-03:00"
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "${var.name_prefix}-aurora-primary-final-snapshot"
-  storage_encrypted         = true
-  apply_immediately         = true
-  enabled_cloudwatch_logs_exports = ["audit", "error", "slowquery"]
+  provider                          = aws.primary
+  cluster_identifier                = "${var.name_prefix}-aurora-primary"
+  engine                            = var.engine
+  engine_mode                       = "provisioned"
+  engine_version                    = var.engine_version
+  global_cluster_identifier         = aws_rds_global_cluster.this.id
+  database_name                     = var.database_name
+  master_username                   = var.master_username
+  master_password                   = var.master_password
+  db_subnet_group_name              = aws_db_subnet_group.primary.name
+  vpc_security_group_ids            = [var.primary_aurora_sg_id]
+  backup_retention_period           = 7
+  preferred_backup_window           = "02:00-03:00"
+  skip_final_snapshot               = false
+  final_snapshot_identifier         = "${var.name_prefix}-aurora-primary-final-snapshot"
+  storage_encrypted                 = true
+  apply_immediately                 = true
+  iam_database_authentication_enabled = true
+  enabled_cloudwatch_logs_exports   = ["audit", "error", "slowquery"]
   serverlessv2_scaling_configuration {
     min_capacity = 0.5
     max_capacity = 4
@@ -131,4 +141,32 @@ resource "aws_rds_cluster_instance" "secondary" {
   performance_insights_enabled = true
   monitoring_interval          = 60
   monitoring_role_arn          = aws_iam_role.rds_monitoring_secondary.arn
+}
+
+# MAANG: Aurora read replica auto-scaling (primary cluster)
+resource "aws_appautoscaling_target" "aurora_read" {
+  provider           = aws.primary
+  max_capacity       = 5
+  min_capacity       = 1
+  resource_id        = "cluster:${aws_rds_cluster.primary.cluster_identifier}"
+  scalable_dimension = "rds:cluster:ReadReplicaCount"
+  service_namespace  = "rds"
+}
+
+resource "aws_appautoscaling_policy" "aurora_read_cpu" {
+  provider           = aws.primary
+  name               = "${var.name_prefix}-aurora-read-cpu"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.aurora_read.resource_id
+  scalable_dimension = aws_appautoscaling_target.aurora_read.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.aurora_read.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value = 70.0
+    predefined_metric_specification {
+      predefined_metric_type = "RDSReaderAverageCPUUtilization"
+    }
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
 }

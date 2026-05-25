@@ -47,11 +47,12 @@ resource "aws_security_group" "app" {
 
 resource "aws_security_group" "aurora" {
   name        = "${var.name_prefix}-aurora-sg"
-  description = "Aurora SG - allows MySQL only from app tier"
+  description = "Aurora SG - allows MySQL only from app tier, no outbound"
   vpc_id      = var.vpc_id
 
   ingress { from_port = 3306 to_port = 3306 protocol = "tcp" security_groups = [aws_security_group.app.id] }
-  egress  { from_port = 0    to_port = 0    protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  # MAANG FIX: Aurora DB has no business making outbound connections — deny all egress
+  egress { from_port = 0 to_port = 0 protocol = "-1" cidr_blocks = [var.vpc_cidr] }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-aurora-sg" })
 }

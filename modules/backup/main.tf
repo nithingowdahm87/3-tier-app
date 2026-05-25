@@ -1,3 +1,22 @@
+terraform {
+  required_providers {
+    aws = { source = "hashicorp/aws" }
+  }
+}
+
+# MAANG: Customer-managed KMS key for backup vault encryption
+resource "aws_kms_key" "backup" {
+  description             = "KMS key for AWS Backup vault encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  tags                    = merge(var.tags, { Name = "${var.name_prefix}-backup-kms" })
+}
+
+resource "aws_kms_alias" "backup" {
+  name          = "alias/${var.name_prefix}-backup"
+  target_key_id = aws_kms_key.backup.key_id
+}
+
 resource "aws_iam_role" "backup" {
   name = "${var.name_prefix}-backup-role"
 
@@ -16,15 +35,15 @@ resource "aws_iam_role_policy_attachment" "backup" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
 }
 
-# FIX: add restore policy so AWS Backup can also restore resources
 resource "aws_iam_role_policy_attachment" "backup_restore" {
   role       = aws_iam_role.backup.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
 }
 
 resource "aws_backup_vault" "this" {
-  name = "${var.name_prefix}-backup-vault"
-  tags = merge(var.tags, { Name = "${var.name_prefix}-backup-vault" })
+  name        = "${var.name_prefix}-backup-vault"
+  kms_key_arn = aws_kms_key.backup.arn
+  tags        = merge(var.tags, { Name = "${var.name_prefix}-backup-vault" })
 }
 
 resource "aws_backup_plan" "this" {
@@ -34,21 +53,14 @@ resource "aws_backup_plan" "this" {
     rule_name         = "daily-backup"
     target_vault_name = aws_backup_vault.this.name
     schedule          = "cron(0 3 * * ? *)"
-
-    lifecycle {
-      delete_after = 7
-    }
+    lifecycle { delete_after = 7 }
   }
 
-  # FIX: add a weekly backup with longer retention for compliance
   rule {
     rule_name         = "weekly-backup"
     target_vault_name = aws_backup_vault.this.name
     schedule          = "cron(0 5 ? * 1 *)"
-
-    lifecycle {
-      delete_after = 30
-    }
+    lifecycle { delete_after = 30 }
   }
 
   tags = var.tags
