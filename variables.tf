@@ -66,6 +66,11 @@ variable "primary_acm_certificate_arn" {
   type        = string
 }
 
+variable "alb_logs_bucket" {
+  description = "S3 bucket name for ALB access logs. Must have the ALB service account bucket policy applied before use."
+  type        = string
+}
+
 # Web ASG
 variable "web_instance_type" {
   description = "Primary instance type for the web tier ASG"
@@ -132,7 +137,6 @@ variable "db_username" {
 }
 
 variable "db_secret_name" {
-  description = "AWS Secrets Manager secret name that stores the Aurora master password. Secret value must be a JSON key 'password'."
+  description = "AWS Secrets Manager secret name/ARN containing the Aurora master password. Secret value must be JSON with key 'password'."
   type        = string
-  # Example: "/prod/aurora/master_password"
 }

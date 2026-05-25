@@ -6,7 +6,7 @@ resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
-  tags = merge(var.tags, { Name = "${var.name_prefix}-vpc" })
+  tags                 = merge(var.tags, { Name = "${var.name_prefix}-vpc" })
 }
 
 resource "aws_subnet" "public" {
@@ -15,7 +15,7 @@ resource "aws_subnet" "public" {
   cidr_block              = cidrsubnet(var.vpc_cidr, 4, count.index)
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
-  tags = merge(var.tags, { Name = "${var.name_prefix}-public-${count.index + 1}", Tier = "public" })
+  tags                    = merge(var.tags, { Name = "${var.name_prefix}-public-${count.index + 1}", Tier = "public" })
 }
 
 resource "aws_subnet" "private" {
@@ -23,7 +23,7 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 4)
   availability_zone = data.aws_availability_zones.available.names[count.index]
-  tags = merge(var.tags, { Name = "${var.name_prefix}-private-${count.index + 1}", Tier = "private" })
+  tags              = merge(var.tags, { Name = "${var.name_prefix}-private-${count.index + 1}", Tier = "private" })
 }
 
 resource "aws_subnet" "db" {
@@ -31,7 +31,7 @@ resource "aws_subnet" "db" {
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 8)
   availability_zone = data.aws_availability_zones.available.names[count.index]
-  tags = merge(var.tags, { Name = "${var.name_prefix}-db-${count.index + 1}", Tier = "db" })
+  tags              = merge(var.tags, { Name = "${var.name_prefix}-db-${count.index + 1}", Tier = "db" })
 }
 
 resource "aws_internet_gateway" "this" {
@@ -39,7 +39,6 @@ resource "aws_internet_gateway" "this" {
   tags   = merge(var.tags, { Name = "${var.name_prefix}-igw" })
 }
 
-# FIX: One EIP and NAT Gateway per AZ for HA (was previously single NAT)
 resource "aws_eip" "nat" {
   count  = var.az_count
   domain = "vpc"
@@ -69,7 +68,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# FIX: One private route table per AZ pointing to its own NAT Gateway
+# One private route table per AZ pointing to its own NAT Gateway
 resource "aws_route_table" "private" {
   count  = var.az_count
   vpc_id = aws_vpc.this.id
@@ -86,14 +85,13 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[count.index].id
 }
 
-# FIX: One db route table per AZ pointing to its own NAT Gateway
+# DB subnets are fully isolated — no internet or NAT route.
+# Aurora does not need outbound internet access; removing the route
+# eliminates an unnecessary attack surface.
 resource "aws_route_table" "db" {
   count  = var.az_count
   vpc_id = aws_vpc.this.id
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.this[count.index].id
-  }
+  # No default route — DB tier is local-only
   tags = merge(var.tags, { Name = "${var.name_prefix}-db-rt-${count.index + 1}" })
 }
 

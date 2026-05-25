@@ -8,19 +8,19 @@ output "secondary_vpc_id" {
   value       = module.network_secondary.vpc_id
 }
 
-output "external_alb_dns" {
-  description = "DNS name of the external Application Load Balancer"
-  value       = module.alb_primary.external_alb_dns
-}
-
 output "nlb_dns_name" {
-  description = "DNS name of the Network Load Balancer"
+  description = "DNS name of the NLB — point your Route53 record or domain here (not the ALB directly)"
   value       = module.nlb_primary.nlb_dns_name
 }
 
-output "bastion_public_ip" {
-  description = "Public IP of the bastion host"
-  value       = module.bastion_primary.bastion_public_ip
+output "external_alb_dns" {
+  description = "DNS name of the external ALB (behind the NLB — for internal reference only)"
+  value       = module.alb_primary.external_alb_dns
+}
+
+output "bastion_asg_name" {
+  description = "Bastion Auto Scaling Group name. Use 'aws ec2 describe-instances --filters Name=tag:aws:autoscaling:groupName,Values=<asg_name>' to find the current bastion IP."
+  value       = module.bastion_primary.bastion_asg_name
 }
 
 output "aurora_primary_endpoint" {

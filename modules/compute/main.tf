@@ -31,7 +31,6 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# FIX: add CloudWatch agent policy so instances can ship logs/metrics
 resource "aws_iam_role_policy_attachment" "cloudwatch" {
   role       = aws_iam_role.ec2.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
@@ -72,7 +71,6 @@ resource "aws_launch_template" "this" {
 
   user_data = base64encode(var.user_data)
 
-  # FIX: tag both the instance and its EBS volumes
   tag_specifications {
     resource_type = "instance"
     tags          = merge(var.tags, { Name = "${var.name_prefix}-${var.role}" })
@@ -89,17 +87,15 @@ resource "aws_launch_template" "this" {
 }
 
 resource "aws_autoscaling_group" "this" {
-  name                = "${var.name_prefix}-${var.role}-asg"
-  vpc_zone_identifier = var.subnet_ids
-  target_group_arns   = var.target_group_arns
-  health_check_type   = "ELB"
-  # FIX: add grace period so new instances pass health checks before being killed
+  name                      = "${var.name_prefix}-${var.role}-asg"
+  vpc_zone_identifier       = var.subnet_ids
+  target_group_arns         = var.target_group_arns
+  health_check_type         = "ELB"
   health_check_grace_period = 300
   min_size                  = var.min_size
   max_size                  = var.max_size
   desired_capacity          = var.desired_capacity
 
-  # FIX: graceful instance refresh on launch template changes
   instance_refresh {
     strategy = "Rolling"
     preferences {
@@ -125,9 +121,20 @@ resource "aws_autoscaling_group" "this" {
     }
   }
 
+  # Propagate Name tag
   tag {
     key                 = "Name"
     value               = "${var.name_prefix}-${var.role}"
     propagate_at_launch = true
+  }
+
+  # Propagate all common tags (Project, Environment, ManagedBy) to launched instances
+  dynamic "tag" {
+    for_each = var.tags
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
   }
 }

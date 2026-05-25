@@ -4,7 +4,14 @@ resource "aws_lb" "external" {
   internal           = false
   security_groups    = [var.alb_sg_id]
   subnets            = var.public_subnet_ids
-  tags               = merge(var.tags, { Name = "${var.name_prefix}-alb-ext" })
+
+  access_logs {
+    bucket  = var.alb_logs_bucket
+    prefix  = "${var.name_prefix}/alb-ext"
+    enabled = true
+  }
+
+  tags = merge(var.tags, { Name = "${var.name_prefix}-alb-ext" })
 }
 
 resource "aws_lb_target_group" "web" {
@@ -22,7 +29,7 @@ resource "aws_lb_target_group" "web" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-web-tg" })
 }
 
-# FIX: HTTP listener now redirects to HTTPS (was previously forwarding)
+# HTTP listener redirects to HTTPS
 resource "aws_lb_listener" "external_http" {
   load_balancer_arn = aws_lb.external.arn
   port              = 80
@@ -38,7 +45,7 @@ resource "aws_lb_listener" "external_http" {
   }
 }
 
-# FIX: Added HTTPS listener with ACM certificate termination
+# HTTPS listener with ACM certificate termination and TLS 1.3 policy
 resource "aws_lb_listener" "external_https" {
   load_balancer_arn = aws_lb.external.arn
   port              = 443
@@ -58,7 +65,14 @@ resource "aws_lb" "internal" {
   internal           = true
   security_groups    = [var.internal_alb_sg_id]
   subnets            = var.private_subnet_ids
-  tags               = merge(var.tags, { Name = "${var.name_prefix}-alb-int" })
+
+  access_logs {
+    bucket  = var.alb_logs_bucket
+    prefix  = "${var.name_prefix}/alb-int"
+    enabled = true
+  }
+
+  tags = merge(var.tags, { Name = "${var.name_prefix}-alb-int" })
 }
 
 resource "aws_lb_target_group" "app" {

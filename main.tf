@@ -76,6 +76,7 @@ module "alb_primary" {
   alb_sg_id           = module.security_primary.alb_sg_id
   internal_alb_sg_id  = module.security_primary.internal_alb_sg_id
   acm_certificate_arn = var.primary_acm_certificate_arn
+  alb_logs_bucket     = var.alb_logs_bucket
   tags                = local.common_tags
 }
 
@@ -96,12 +97,12 @@ module "bastion_primary" {
   source    = "./modules/bastion"
   providers = { aws = aws.primary }
 
-  name_prefix      = "${var.project_name}-${var.environment}-primary"
-  subnet_ids       = module.network_primary.public_subnet_ids
-  bastion_sg_id    = module.security_primary.bastion_sg_id
-  key_name         = var.key_name
-  instance_type    = var.bastion_instance_type
-  tags             = local.common_tags
+  name_prefix   = "${var.project_name}-${var.environment}-primary"
+  subnet_ids    = module.network_primary.public_subnet_ids
+  bastion_sg_id = module.security_primary.bastion_sg_id
+  key_name      = var.key_name
+  instance_type = var.bastion_instance_type
+  tags          = local.common_tags
 }
 
 # ─── Compute (Web + App ASGs) ─────────────────────────────────────────────────
@@ -110,40 +111,40 @@ module "web_asg_primary" {
   source    = "./modules/compute"
   providers = { aws = aws.primary }
 
-  name_prefix            = "${var.project_name}-${var.environment}-primary"
-  role                   = "web"
-  instance_type          = var.web_instance_type
-  fallback_instance_type = var.web_fallback_instance_type
-  key_name               = var.key_name
-  security_group_ids     = [module.security_primary.web_sg_id]
-  subnet_ids             = module.network_primary.private_subnet_ids
-  target_group_arns      = [module.alb_primary.web_target_group_arn]
-  min_size               = var.web_min_size
-  max_size               = var.web_max_size
-  desired_capacity       = var.web_desired_capacity
+  name_prefix             = "${var.project_name}-${var.environment}-primary"
+  role                    = "web"
+  instance_type           = var.web_instance_type
+  fallback_instance_type  = var.web_fallback_instance_type
+  key_name                = var.key_name
+  security_group_ids      = [module.security_primary.web_sg_id]
+  subnet_ids              = module.network_primary.private_subnet_ids
+  target_group_arns       = [module.alb_primary.web_target_group_arn]
+  min_size                = var.web_min_size
+  max_size                = var.web_max_size
+  desired_capacity        = var.web_desired_capacity
   on_demand_base_capacity = var.on_demand_base_capacity
-  user_data              = var.web_user_data
-  tags                   = local.common_tags
+  user_data               = var.web_user_data
+  tags                    = local.common_tags
 }
 
 module "app_asg_primary" {
   source    = "./modules/compute"
   providers = { aws = aws.primary }
 
-  name_prefix            = "${var.project_name}-${var.environment}-primary"
-  role                   = "app"
-  instance_type          = var.app_instance_type
-  fallback_instance_type = var.app_fallback_instance_type
-  key_name               = var.key_name
-  security_group_ids     = [module.security_primary.app_sg_id]
-  subnet_ids             = module.network_primary.private_subnet_ids
-  target_group_arns      = [module.alb_primary.app_target_group_arn]
-  min_size               = var.app_min_size
-  max_size               = var.app_max_size
-  desired_capacity       = var.app_desired_capacity
+  name_prefix             = "${var.project_name}-${var.environment}-primary"
+  role                    = "app"
+  instance_type           = var.app_instance_type
+  fallback_instance_type  = var.app_fallback_instance_type
+  key_name                = var.key_name
+  security_group_ids      = [module.security_primary.app_sg_id]
+  subnet_ids              = module.network_primary.private_subnet_ids
+  target_group_arns       = [module.alb_primary.app_target_group_arn]
+  min_size                = var.app_min_size
+  max_size                = var.app_max_size
+  desired_capacity        = var.app_desired_capacity
   on_demand_base_capacity = var.on_demand_base_capacity
-  user_data              = var.app_user_data
-  tags                   = local.common_tags
+  user_data               = var.app_user_data
+  tags                    = local.common_tags
 }
 
 # ─── Database (Aurora Global) ─────────────────────────────────────────────────

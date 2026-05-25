@@ -18,16 +18,20 @@ resource "aws_dynamodb_table" "this" {
 
   range_key = var.range_key
 
+  # TTL: app writes Unix epoch timestamp to expiresAt; DynamoDB auto-deletes expired items
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
+
   point_in_time_recovery {
     enabled = true
   }
 
-  # FIX: enable server-side encryption with AWS-managed key
   server_side_encryption {
     enabled = true
   }
 
-  # FIX: enable deletion protection
   deletion_protection_enabled = true
 
   replica {

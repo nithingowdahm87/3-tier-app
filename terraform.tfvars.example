@@ -1,9 +1,9 @@
 # Copy this file to terraform.tfvars and fill in real values.
 # NEVER commit terraform.tfvars - it is in .gitignore.
 
-project_name   = "myapp"
-environment    = "prod"
-primary_region = "us-east-1"
+project_name     = "myapp"
+environment      = "prod"
+primary_region   = "us-east-1"
 secondary_region = "us-west-2"
 
 aws_account_id = "123456789012"
@@ -17,23 +17,32 @@ bastion_allowed_cidr = "YOUR_IP/32"
 
 key_name = "your-ec2-keypair-name"
 
-# ACM Certificate ARN for HTTPS on external ALB
+# ACM Certificate ARN for HTTPS on external ALB (primary region)
 primary_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
 
+# S3 bucket for ALB access logs (must have ALB service account bucket policy applied)
+# See: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
+alb_logs_bucket = "your-alb-access-logs-bucket"
+
 # Compute sizing
-web_instance_type        = "t3.small"
+web_instance_type          = "t3.small"
 web_fallback_instance_type = "t3.medium"
-web_min_size             = 1
-web_max_size             = 4
-web_desired_capacity     = 2
+web_min_size               = 1
+web_max_size               = 4
+web_desired_capacity       = 2
 
-app_instance_type        = "t3.small"
+app_instance_type          = "t3.small"
 app_fallback_instance_type = "t3.medium"
-app_min_size             = 1
-app_max_size             = 4
-app_desired_capacity     = 2
+app_min_size               = 1
+app_max_size               = 4
+app_desired_capacity       = 2
 
-# Database - prefer using TF_VAR_db_password env var instead
+# Database
 db_name     = "appdb"
 db_username = "admin"
-# db_password = "use_TF_VAR_db_password_env_variable_instead"
+
+# Secrets Manager secret name containing Aurora master password.
+# Create it first: aws secretsmanager create-secret \
+#   --name "/prod/aurora/master_password" \
+#   --secret-string '{"password": "YourStrongPassword123!"}'
+db_secret_name = "/prod/aurora/master_password"
