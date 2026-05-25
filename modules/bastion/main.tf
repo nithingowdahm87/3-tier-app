@@ -14,8 +14,9 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_instance" "bastion" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t2.micro"
+  ami           = data.aws_ami.ubuntu.id
+  # FIX: Use variable instead of hardcoded t2.micro, default upgraded to t3.micro
+  instance_type = var.instance_type
   subnet_id                   = var.public_subnet_id
   vpc_security_group_ids      = [var.bastion_sg_id]
   key_name                    = var.key_name

@@ -1,4 +1,3 @@
-output "nlb_sg_id" { value = aws_security_group.nlb.id }
 output "alb_sg_id" { value = aws_security_group.alb.id }
 output "web_sg_id" { value = aws_security_group.web.id }
 output "internal_alb_sg_id" { value = aws_security_group.internal_alb.id }

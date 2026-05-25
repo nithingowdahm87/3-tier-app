@@ -17,7 +17,8 @@ resource "aws_rds_global_cluster" "this" {
   engine                    = var.engine
   engine_version            = var.engine_version
   database_name             = var.database_name
-  deletion_protection       = false
+  # FIX: Enable deletion protection to prevent accidental destruction
+  deletion_protection       = true
   storage_encrypted         = true
 }
 
@@ -35,7 +36,9 @@ resource "aws_rds_cluster" "primary" {
   vpc_security_group_ids    = [var.primary_aurora_sg_id]
   backup_retention_period   = 7
   preferred_backup_window   = "02:00-03:00"
-  skip_final_snapshot       = true
+  # FIX: Disable skip_final_snapshot to protect against accidental data loss
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${var.name_prefix}-aurora-primary-final-snapshot"
   storage_encrypted         = true
   apply_immediately         = true
   serverlessv2_scaling_configuration {
@@ -63,7 +66,9 @@ resource "aws_rds_cluster" "secondary" {
   global_cluster_identifier = aws_rds_global_cluster.this.id
   db_subnet_group_name      = aws_db_subnet_group.secondary.name
   vpc_security_group_ids    = [var.secondary_aurora_sg_id]
-  skip_final_snapshot       = true
+  # FIX: Disable skip_final_snapshot to protect against accidental data loss
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${var.name_prefix}-aurora-secondary-final-snapshot"
   storage_encrypted         = true
   apply_immediately         = true
   serverlessv2_scaling_configuration {
