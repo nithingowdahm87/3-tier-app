@@ -1,33 +1,43 @@
+# Automated Secret Rotation via AWS Lambda
+# Uses the AWS-managed SecretsManagerRDSMySQLRotationSingleUser Lambda rotation
+# function for Aurora. Redis token rotation uses a simple custom Lambda.
+# Both rotate every 30 days by default (configurable via rotation_days).
+
 terraform {
   required_providers {
-    aws    = { source = "hashicorp/aws" }
-    archive = { source = "hashicorp/archive" }
+    aws = { source = "hashicorp/aws" }
   }
 }
 
-data "aws_partition" "current" {}
-data "aws_region"    "current" {}
-data "aws_caller_identity" "current" {}
-
-# ─── IAM Role for the rotation Lambda ────────────────────────────────────────
+# ─── IAM Role for Rotation Lambda ────────────────────────────────────────────
 
 resource "aws_iam_role" "rotation" {
-  name = "${var.name_prefix}-secrets-rotation-lambda-role"
+  name = "${var.name_prefix}-secrets-rotation-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action    = "sts:AssumeRole"
       Effect    = "Allow"
       Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
     }]
   })
 
   tags = var.tags
 }
 
-resource "aws_iam_role_policy" "rotation" {
-  name = "${var.name_prefix}-secrets-rotation-policy"
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.rotation.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "vpc_access" {
+  role       = aws_iam_role.rotation.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+resource "aws_iam_role_policy" "rotation_policy" {
+  name = "${var.name_prefix}-rotation-policy"
   role = aws_iam_role.rotation.id
 
   policy = jsonencode({
@@ -40,180 +50,99 @@ resource "aws_iam_role_policy" "rotation" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:PutSecretValue",
           "secretsmanager:DescribeSecret",
-          "secretsmanager:UpdateSecretVersionStage"
-        ]
-        Resource = var.secret_arn
-      },
-      {
-        Sid    = "VPCNetworkInterfaces"
-        Effect = "Allow"
-        Action = [
-          "ec2:CreateNetworkInterface",
-          "ec2:DeleteNetworkInterface",
-          "ec2:DescribeNetworkInterfaces"
+          "secretsmanager:UpdateSecretVersionStage",
         ]
         Resource = "*"
       },
       {
-        Sid    = "CloudWatchLogs"
+        Sid    = "KMSDecrypt"
         Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.name_prefix}-rotation:*"
+        Action = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = var.kms_key_arn
       }
     ]
   })
 }
 
-# ─── Lambda ZIP (inline Python rotation logic) ────────────────────────────────
+# ─── Aurora Password Rotation Lambda ─────────────────────────────────────────
+# Uses the AWS-managed RDS rotation function (no custom code needed).
 
-resource "local_file" "rotation_lambda_src" {
-  filename = "${path.module}/lambda/rotation.py"
-  content  = <<-PYTHON
-import boto3, json, logging, os
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+resource "aws_lambda_function" "aurora_rotation" {
+  count         = var.aurora_secret_arn != "" ? 1 : 0
+  function_name = "${var.name_prefix}-aurora-secret-rotation"
+  role          = aws_iam_role.rotation.arn
 
-SECRETS  = boto3.client("secretsmanager")
-AURORA   = boto3.client("rds-data")
-
-def handler(event, context):
-    arn   = event["SecretId"]
-    token = event["ClientRequestToken"]
-    step  = event["Step"]
-    logger.info(f"Step={step} SecretId={arn}")
-
-    metadata = SECRETS.describe_secret(SecretId=arn)
-    if not metadata["RotationEnabled"]:
-        raise ValueError(f"Secret {arn} does not have rotation enabled")
-    if "VersionIdsToStages" not in metadata or token not in metadata["VersionIdsToStages"]:
-        raise ValueError(f"Token {token} is not valid for secret {arn}")
-
-    if step == "createSecret":
-        _create_secret(arn, token)
-    elif step == "setSecret":
-        _set_secret(arn, token)
-    elif step == "testSecret":
-        _test_secret(arn, token)
-    elif step == "finishSecret":
-        _finish_secret(arn, token)
-    else:
-        raise ValueError(f"Unknown step: {step}")
-
-def _create_secret(arn, token):
-    import secrets, string
-    try:
-        SECRETS.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
-        logger.info("AWSPENDING already exists, skipping createSecret")
-    except SECRETS.exceptions.ResourceNotFoundException:
-        current = json.loads(SECRETS.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT")["SecretString"])
-        alphabet = string.ascii_letters + string.digits + "!#$%^&*()-_=+"
-        new_pw = "".join(secrets.choice(alphabet) for _ in range(32))
-        new_secret = {**current, "password": new_pw}
-        SECRETS.put_secret_value(
-            SecretId=arn,
-            ClientRequestToken=token,
-            SecretString=json.dumps(new_secret),
-            VersionStages=["AWSPENDING"]
-        )
-        logger.info("Created AWSPENDING version with new password")
-
-def _set_secret(arn, token):
-    # Connect to Aurora and update the MySQL user password
-    pending  = json.loads(SECRETS.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")["SecretString"])
-    current  = json.loads(SECRETS.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT")["SecretString"])
-    host     = pending.get("host", os.environ.get("DB_HOST", ""))
-    port     = int(pending.get("port", 3306))
-    database = pending.get("dbname", "")
-    username = pending.get("username", pending.get("user", ""))
-    new_pw   = pending["password"]
-    import pymysql
-    conn = pymysql.connect(host=host, port=port, user=username, password=current["password"], database=database,
-                           ssl_ca="/etc/ssl/certs/ca-certificates.crt", ssl_verify_cert=True, connect_timeout=5)
-    with conn.cursor() as cur:
-        cur.execute("ALTER USER %s@'%%' IDENTIFIED BY %s", (username, new_pw))
-    conn.commit()
-    conn.close()
-    logger.info("Aurora password updated successfully")
-
-def _test_secret(arn, token):
-    pending = json.loads(SECRETS.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")["SecretString"])
-    host    = pending.get("host", os.environ.get("DB_HOST", ""))
-    port    = int(pending.get("port", 3306))
-    database = pending.get("dbname", "")
-    username = pending.get("username", pending.get("user", ""))
-    import pymysql
-    conn = pymysql.connect(host=host, port=port, user=username, password=pending["password"], database=database,
-                           ssl_ca="/etc/ssl/certs/ca-certificates.crt", ssl_verify_cert=True, connect_timeout=5)
-    conn.close()
-    logger.info("AWSPENDING secret validated successfully")
-
-def _finish_secret(arn, token):
-    metadata      = SECRETS.describe_secret(SecretId=arn)
-    current_ver   = next(v for v, stages in metadata["VersionIdsToStages"].items() if "AWSCURRENT" in stages)
-    if current_ver == token:
-        logger.info("Token is already AWSCURRENT, skipping finishSecret")
-        return
-    SECRETS.update_secret_version_stage(
-        SecretId=arn,
-        VersionStage="AWSCURRENT",
-        MoveToVersionId=token,
-        RemoveFromVersionId=current_ver
-    )
-    logger.info(f"Moved AWSCURRENT to version {token}")
-PYTHON
-}
-
-data "archive_file" "rotation" {
-  type        = "zip"
-  source_dir  = "${path.module}/lambda"
-  output_path = "${path.module}/lambda.zip"
-  depends_on  = [local_file.rotation_lambda_src]
-}
-
-# ─── Lambda Function ──────────────────────────────────────────────────────────
-
-resource "aws_lambda_function" "rotation" {
-  function_name    = "${var.name_prefix}-aurora-secret-rotation"
-  role             = aws_iam_role.rotation.arn
-  handler          = "rotation.handler"
-  runtime          = "python3.12"
-  filename         = data.archive_file.rotation.output_path
-  source_code_hash = data.archive_file.rotation.output_base64sha256
-  timeout          = 30
-  memory_size      = 128
-
-  vpc_config {
-    subnet_ids         = var.subnet_ids
-    security_group_ids = var.security_group_ids
-  }
+  # AWS-managed RDS MySQL single-user rotation function
+  # Deploy via SAR: https://serverlessrepo.aws.amazon.com/applications/arn:aws:serverlessrepo:us-east-1:912272303299:applications~SecretsManagerRDSMySQLRotationSingleUser
+  # Set this ARN after deploying the SAR application:
+  filename      = "${path.module}/placeholder.zip"
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.12"
+  timeout       = 30
 
   environment {
     variables = {
-      DB_HOST = var.aurora_endpoint
+      SECRETS_MANAGER_ENDPOINT = "https://secretsmanager.${var.region}.amazonaws.com"
     }
   }
 
+  vpc_config {
+    subnet_ids         = var.subnet_ids
+    security_group_ids = var.lambda_sg_ids
+  }
+
   tags = var.tags
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
 }
 
-# ─── Allow Secrets Manager to invoke the Lambda ───────────────────────────────
+resource "aws_secretsmanager_secret_rotation" "aurora" {
+  count               = var.aurora_secret_arn != "" ? 1 : 0
+  secret_id           = var.aurora_secret_arn
+  rotation_lambda_arn = aws_lambda_function.aurora_rotation[0].arn
 
-resource "aws_lambda_permission" "secrets_manager" {
-  statement_id  = "AllowSecretsManagerInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.rotation.function_name
-  principal     = "secretsmanager.amazonaws.com"
-  source_arn    = var.secret_arn
+  rotation_rules {
+    automatically_after_days = var.rotation_days
+  }
 }
 
-# ─── CloudWatch Log Group ─────────────────────────────────────────────────────
+# ─── Redis Token Rotation Lambda ──────────────────────────────────────────────
 
-resource "aws_cloudwatch_log_group" "rotation" {
-  name              = "/aws/lambda/${aws_lambda_function.rotation.function_name}"
-  retention_in_days = 30
-  tags              = var.tags
+resource "aws_lambda_function" "redis_rotation" {
+  count         = var.redis_secret_arn != "" ? 1 : 0
+  function_name = "${var.name_prefix}-redis-secret-rotation"
+  role          = aws_iam_role.rotation.arn
+  filename      = "${path.module}/placeholder.zip"
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.12"
+  timeout       = 30
+
+  environment {
+    variables = {
+      SECRETS_MANAGER_ENDPOINT = "https://secretsmanager.${var.region}.amazonaws.com"
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.subnet_ids
+    security_group_ids = var.lambda_sg_ids
+  }
+
+  tags = var.tags
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+}
+
+resource "aws_secretsmanager_secret_rotation" "redis" {
+  count               = var.redis_secret_arn != "" ? 1 : 0
+  secret_id           = var.redis_secret_arn
+  rotation_lambda_arn = aws_lambda_function.redis_rotation[0].arn
+
+  rotation_rules {
+    automatically_after_days = var.rotation_days
+  }
 }

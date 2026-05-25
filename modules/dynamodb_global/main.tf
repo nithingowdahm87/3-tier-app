@@ -29,7 +29,8 @@ resource "aws_dynamodb_table" "this" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
   }
 
   deletion_protection_enabled = true
@@ -37,7 +38,12 @@ resource "aws_dynamodb_table" "this" {
   replica {
     region_name            = var.replica_region
     point_in_time_recovery = true
+    kms_key_arn            = var.replica_kms_key_arn
   }
 
   tags = merge(var.tags, { Name = var.table_name })
 }
+
+# ─── DynamoDB Auto Scaling ────────────────────────────────────────────────────
+# PAY_PER_REQUEST handles burst automatically, but explicit auto-scaling
+# policies give you cost visibility and t

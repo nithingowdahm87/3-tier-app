@@ -1,0 +1,12 @@
+output "aurora_key_arn"        { value = aws_kms_key.aurora.arn }
+output "aurora_key_id"         { value = aws_kms_key.aurora.key_id }
+output "s3_key_arn"            { value = aws_kms_key.s3.arn }
+output "s3_key_id"             { value = aws_kms_key.s3.key_id }
+output "dynamodb_key_arn"      { value = aws_kms_key.dynamodb.arn }
+output "dynamodb_key_id"       { value = aws_kms_key.dynamodb.key_id }
+output "elasticache_key_arn"   { value = aws_kms_key.elasticache.arn }
+output "elasticache_key_id"    { value = aws_kms_key.elasticache.key_id }
+output "secretsmanager_key_arn" { value = aws_kms_key.secretsmanager.arn }
+output "secretsmanager_key_id"  { value = aws_kms_key.secretsmanager.key_id }
+output "ebs_key_arn"           { value = aws_kms_key.ebs.arn }
+output "ebs_key_id"            { value = aws_kms_key.ebs.key_id }

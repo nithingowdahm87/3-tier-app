@@ -1,6 +1,9 @@
-variable "name_prefix"         { type = string }
-variable "secret_arn"          { type = string; description = "ARN of the Secrets Manager secret to rotate" }
-variable "aurora_endpoint"     { type = string; description = "Aurora cluster write endpoint (passed to Lambda via env var)" }
-variable "subnet_ids"          { type = list(string); description = "Private subnets for the Lambda VPC config (must have connectivity to Aurora)" }
-variable "security_group_ids"  { type = list(string); description = "Security group(s) for the rotation Lambda" }
-variable "tags"                { type = map(string); default = {} }
+variable "name_prefix"       { type = string }
+variable "region"             { type = string }
+variable "aurora_secret_arn"  { type = string; default = "" }
+variable "redis_secret_arn"   { type = string; default = "" }
+variable "kms_key_arn"        { type = string; description = "KMS CMK ARN used to encrypt/decrypt the secrets" }
+variable "subnet_ids"         { type = list(string); description = "Private subnets for rotation Lambda VPC config" }
+variable "lambda_sg_ids"      { type = list(string); description = "Security groups for the rotation Lambda" }
+variable "rotation_days"      { type = number; default = 30; description = "Rotate secrets every N days" }
+variable "tags"               { type = map(string); default = {} }
