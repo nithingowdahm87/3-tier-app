@@ -13,13 +13,28 @@ output "nlb_dns_name" {
   value       = module.nlb_primary.nlb_dns_name
 }
 
+output "global_accelerator_dns" {
+  description = "Global Accelerator DNS — use this for lowest-latency global access"
+  value       = module.globalaccelerator.accelerator_dns
+}
+
+output "global_accelerator_static_ips" {
+  description = "Global Accelerator static IP addresses (allowlist in corporate firewalls)"
+  value       = module.globalaccelerator.static_ip_addresses
+}
+
+output "cloudfront_domain" {
+  description = "CloudFront distribution domain for static assets"
+  value       = module.cdn.distribution_domain
+}
+
 output "app_url" {
   description = "Application URL"
   value       = "https://${var.domain_name}"
 }
 
 output "external_alb_dns" {
-  description = "External ALB DNS (behind NLB — for internal reference)"
+  description = "External ALB DNS (behind NLB)"
   value       = module.alb_primary.external_alb_dns
 }
 
@@ -59,6 +74,68 @@ output "aurora_secondary_endpoint" {
   description = "Aurora secondary cluster endpoint (DR region)"
   value       = module.aurora.secondary_cluster_endpoint
   sensitive   = true
+}
+
+output "redis_primary_endpoint" {
+  description = "ElastiCache Redis primary endpoint"
+  value       = module.elasticache.primary_endpoint
+  sensitive   = true
+}
+
+output "redis_reader_endpoint" {
+  description = "ElastiCache Redis reader endpoint"
+  value       = module.elasticache.reader_endpoint
+  sensitive   = true
+}
+
+output "redis_auth_secret" {
+  description = "Secrets Manager secret name for Redis auth token"
+  value       = module.elasticache.auth_secret_name
+}
+
+output "cloudtrail_bucket" {
+  description = "S3 bucket for CloudTrail logs"
+  value       = module.cloudtrail.trail_bucket
+}
+
+output "cloudtrail_log_group" {
+  description = "CloudWatch log group for real-time CloudTrail event streaming"
+  value       = module.cloudtrail.log_group_name
+}
+
+output "observability_dashboard" {
+  description = "CloudWatch Operations Dashboard name"
+  value       = module.observability.dashboard_name
+}
+
+output "logs_athena_workgroup" {
+  description = "Athena workgroup for querying centralised logs"
+  value       = module.observability.athena_workgroup
+}
+
+output "alerts_sns_topic" {
+  description = "SNS topic ARN for all ops alerts"
+  value       = module.alerting.sns_topic_arn
+}
+
+output "waf_web_acl_arn" {
+  description = "WAF Web ACL ARN"
+  value       = module.waf.web_acl_arn
+}
+
+output "guardduty_primary_detector" {
+  description = "GuardDuty detector ID in primary region"
+  value       = module.guardduty.primary_detector_id
+}
+
+output "fis_terminate_web_template" {
+  description = "FIS experiment template ID for web tier EC2 termination chaos"
+  value       = module.fis.terminate_web_template_id
+}
+
+output "fis_aurora_failover_template" {
+  description = "FIS experiment template ID for Aurora failover drill"
+  value       = module.fis.aurora_failover_template_id
 }
 
 output "primary_flow_log_group" {

@@ -12,7 +12,7 @@ primary_vpc_cidr   = "10.0.0.0/16"
 secondary_vpc_cidr = "10.1.0.0/16"
 az_count           = 2
 
-# Restrict to YOUR office/VPN IP only
+# Restrict to YOUR office/VPN IP only — never 0.0.0.0/0
 bastion_allowed_cidr = "YOUR_IP/32"
 
 # DNS — must be a domain hosted in Route53
@@ -35,7 +35,29 @@ app_desired_capacity       = 2
 # Database
 db_name     = "appdb"
 db_username = "admin"
-# db_secret_name is auto-derived from environment. After first apply, seed the value:
+# After first apply, seed the Aurora password:
 #   aws secretsmanager put-secret-value \
 #     --secret-id /prod/aurora/master_password \
 #     --secret-string '{"password": "YourStrongPassword123!"}'
+
+# ElastiCache Redis
+redis_node_type  = "cache.t4g.small"
+redis_num_nodes  = 2
+# Generate with: openssl rand -base64 32
+# Store in Secrets Manager, do NOT commit to tfvars
+redis_auth_token = "REPLACE_WITH_STRONG_RANDOM_TOKEN"
+
+# Alerting
+alert_email                      = "your-team@example.com"
+alb_5xx_threshold                = 10
+aurora_max_connections_threshold = 800
+
+# S3 bucket names — must be globally unique across all AWS accounts
+cloudtrail_bucket_name     = "myapp-prod-cloudtrail-logs-ACCOUNTID"
+config_bucket_name         = "myapp-prod-config-snapshots-ACCOUNTID"
+logs_bucket_name           = "myapp-prod-centralised-logs-ACCOUNTID"
+static_assets_bucket_name  = "myapp-prod-static-assets-ACCOUNTID"
+
+# CloudFront ACM certificate — MUST be created in us-east-1 regardless of primary region
+# Create with: aws acm request-certificate --domain-name static.app.example.com --validation-method DNS --region us-east-1
+cloudfront_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
