@@ -1,206 +1,249 @@
-# 3-Tier AWS Infrastructure — MAANG-Level Production (Terraform)
+# 3-Tier Production AWS Architecture
 
-A fully automated, multi-region, production-grade 3-tier application infrastructure on AWS managed entirely with Terraform. **Zero manual prerequisites** — DNS certificates, SSH keys, secrets, monitoring, WAF, and security services are all provisioned by IaC.
+[![Terraform](https://img.shields.io/badge/Terraform-%E2%89%A51.10-623CE4?logo=terraform)](https://www.terraform.io/)
+[![AWS](https://img.shields.io/badge/AWS-Multi--Region-FF9900?logo=amazonaws)](https://aws.amazon.com/)
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?logo=github-actions)](https://github.com/nithingowdahm87/3-tier-app/actions)
 
-## Architecture Overview
+**Production-grade, multi-region, highly available 3-tier web application infrastructure on AWS built with Terraform.**
 
-```
- Internet
-     │
-     ▼
-[Global Accelerator] — Anycast static IPs, TCP:443, primary/secondary failover
-     │
-     ▼
-[Route53] — Failover routing with health checks (primary NLB → secondary NLB)
-     │
-[CloudFront] — Static assets CDN (S3 + OAC, TLSv1.2_2021, WAF attached)
-     │
-     ▼
-[NLB] TCP:80 + TCP:443 — public, cross-zone, deletion protection
-     │
-     ▼
-[WAF v2] — OWASP CRS + SQLi + KnownBadInputs managed rules + rate limiting
-     │
-     ▼
-[External ALB] — HTTPS:443 (ACM TLS 1.3) / HTTP:80→301 redirect, access logs
-     │
-     ▼
-[Web ASG] — private subnets, Ubuntu 24.04, IMDSv2, EBS encrypted, Spot/On-Demand
-     │
-     ▼
-[Internal ALB] — port 8080
-     │
-     ▼
-[App ASG] — SSM agent, CloudWatch agent, Secrets Manager + X-Ray instrumentation
-     │
-     ├──▶ [ElastiCache Redis 7] — Multi-AZ, in-transit+at-rest encryption, auth token
-     │
-     ▼
-[Aurora Global Serverless v2] — read replica autoscaling, IAM DB auth, enhanced monitoring
-[DynamoDB Global Table]       — sessions, TTL, PITR, SSE, deletion protection
-```
+This repository provisions:
+- ✅ Multi-region active-standby (us-east-1 → us-west-2)
+- ✅ Auto-scaling compute with mixed on-demand + spot (70-80% cost savings)
+- ✅ Aurora Global MySQL + ElastiCache Redis + DynamoDB Global Tables
+- ✅ CloudFront CDN + AWS Global Accelerator
+- ✅ Full observability (CloudWatch, X-Ray, Athena, Kinesis)
+- ✅ DevSecOps pipeline (Checkov, tfsec, Trivy)
+- ✅ Keyless OIDC authentication
+- ✅ Automated drift detection + module versioning
 
-**Regions:** Primary (`us-east-1`) + Secondary DR (`us-west-2`)  
-**Connectivity:** VPC Peering (all AZ route tables) + VPC Endpoints (S3, DynamoDB, Secrets Manager, SSM, KMS, X-Ray, CloudWatch, ECR)
-
-## Module Map
-
-| Module | What it provisions |
-|---|---|
-| `network` | VPC, 3-tier subnets (public/private/db), HA NAT Gateways, route tables, VPC Flow Logs |
-| `security` | Least-privilege SGs for ALB, web, internal ALB, app, Aurora, bastion, Redis |
-| `vpc_endpoints` | S3 + DynamoDB Gateway endpoints; Secrets Manager, SSM, KMS, CloudWatch, X-Ray, ECR Interface endpoints |
-| `logging` | ALB access logs S3 bucket with ELB service account policy |
-| `alb` | External ALB (HTTPS + HTTP→HTTPS redirect) + Internal ALB, access logs |
-| `nlb` | NLB (TCP:80 + TCP:443), deletion protection, cross-zone LB |
-| `dns_cert` | ACM cert (DNS validation) + Route53 health check + failover routing (PRIMARY/SECONDARY) |
-| `keypair` | RSA key pair + EC2 registration + private key in Secrets Manager |
-| `secrets` | Secrets Manager resource with optional automatic rotation scaffold |
-| `compute` | Launch Template (IMDSv2, EBS encrypted) + ASG (Spot/On-Demand mixed) + Secrets Manager IAM |
-| `bastion` | HA Bastion ASG across all public subnets |
-| `aurora_global` | Aurora MySQL Serverless v2 Global Cluster, IAM DB auth, read replica autoscaling (1–5), enhanced monitoring |
-| `elasticache` | Redis 7 replication group, Multi-AZ, TLS, auth token in Secrets Manager, slow-log |
-| `dynamodb_global` | DynamoDB Global Table, TTL, PITR, SSE, deletion protection |
-| `backup` | AWS Backup daily (7d) + weekly (30d), KMS-encrypted vault |
-| `peering` | Cross-region VPC Peering, routes on ALL AZ route tables |
-| `waf` | WAF v2 (OWASP + SQLi + BadInputs + rate limit) + Shield Advanced on ALB + NLB |
-| `cloudtrail` | Multi-region CloudTrail, log file validation, KMS-encrypted S3 + CloudWatch Logs |
-| `guardduty` | GuardDuty both regions, EBS malware scan, EventBridge→SNS for HIGH/CRITICAL findings |
-| `security_hub` | Security Hub + FSBP + CIS Benchmark standards, EventBridge→SNS for CRITICAL findings |
-| `config_rules` | AWS Config recorder + 9 managed compliance rules |
-| `alerting` | SNS topic (KMS), ALB 5xx/p99/healthy-host alarms, Aurora replica lag/connections, DynamoDB throttles, ASG notifications |
-| `observability` | CloudWatch Dashboard (8 widgets), X-Ray sampling, Kinesis Firehose→S3, Athena workgroup |
-| `cdn` | CloudFront + S3 static assets via OAC, TLSv1.2_2021, WAF, access logs |
-| `globalaccelerator` | Global Accelerator, primary+secondary endpoint groups, flow logs |
-| `fis` | FIS chaos experiments: EC2 termination (ASG self-healing) + Aurora failover drill |
-| `bootstrap-state` | S3 (KMS, versioned, HTTPS-only policy) + DynamoDB for Terraform remote state |
-
-## Prerequisites
-
-- Terraform >= 1.5.0
-- AWS CLI configured with appropriate permissions
-- A domain registered and hosted in **Route53**
-
-**That's it.** Everything else is created by Terraform.
-
-## Deploy
-
-### 1. Bootstrap Remote State (one-time)
-
-```bash
-cd bootstrap-state
-terraform init && terraform apply
-cd ..
-```
-
-### 2. Configure Backend
-
-```bash
-cp backend.hcl.example backend.hcl
-# Fill in bucket and dynamodb_table from step 1 outputs
-```
-
-### 3. Set Variables
-
-```bash
-cp terraform.tfvars.example terraform.tfvars
-# Required: aws_account_id, domain_name, hosted_zone_id, bastion_allowed_cidr
-# Required: cloudtrail_bucket_name, config_bucket_name, logs_bucket_name, static_assets_bucket_name
-# Required: redis_auth_token (generate: openssl rand -base64 32)
-# Optional: alert_email, cloudfront_acm_certificate_arn
-```
-
-### 4. First Apply (three-phase for dependency ordering)
-
-```bash
-terraform init -backend-config=backend.hcl
-
-# Phase 1: provision cert + secret before everything that depends on them
-terraform apply -target=module.dns_cert -target=module.aurora_secret
-
-# Seed the Aurora password
-aws secretsmanager put-secret-value \
-  --secret-id /prod/aurora/master_password \
-  --secret-string '{"password": "YourStrongPassword123!"}'
-
-# Phase 2: full apply
-terraform apply
-```
-
-### 5. Retrieve SSH Key
-
-```bash
-aws secretsmanager get-secret-value \
-  --secret-id /prod/keypair/myapp-prod-key \
-  --query SecretString --output text > myapp-prod-key.pem
-chmod 600 myapp-prod-key.pem
-```
-
-## Operational Runbooks
-
-### Run FIS Chaos Experiment (EC2 Termination)
-
-```bash
-# Get experiment template ID from Terraform output
-template_id=$(terraform output -raw fis_terminate_web_template)
-
-aws fis start-experiment --experiment-template-id $template_id
-# Watch CloudWatch Dashboard — ASG should replace the instance within ~3 min
-```
-
-### Run Aurora Failover Drill
-
-```bash
-template_id=$(terraform output -raw fis_aurora_failover_template)
-aws fis start-experiment --experiment-template-id $template_id
-# Monitor: aws rds describe-global-clusters --global-cluster-identifier myapp-prod-global-aurora
-```
-
-### Query Centralised Logs via Athena
-
-```bash
-# Open AWS Console → Athena → select workgroup from Terraform output
-terraform output logs_athena_workgroup
-# Run SQL against s3://logs_bucket_name/logs/year=.../month=.../day=.../
-```
-
-### Trigger Manual CloudWatch Alarm Test
-
-```bash
-aws cloudwatch set-alarm-state \
-  --alarm-name "myapp-prod-alb-5xx-rate" \
-  --state-value ALARM \
-  --state-reason "Manual test"
-```
-
-## Security Highlights
-
-- **WAF v2** OWASP CRS + SQLi + KnownBadInputs rules on all public ALBs
-- **Shield Advanced** protecting ALB and NLB against DDoS
-- **GuardDuty** enabled both regions with EBS malware scanning and HIGH/CRITICAL→SNS alerting
-- **Security Hub** with FSBP + CIS Benchmark standards continuously evaluating compliance
-- **AWS Config** recording all resource changes with 9 compliance rules
-- **CloudTrail** multi-region, log file validation, KMS-encrypted
-- **VPC Endpoints** — Secrets Manager, SSM, KMS, CloudWatch, ECR, X-Ray traffic never leaves AWS backbone
-- **IAM DB Authentication** enabled on Aurora — applications can authenticate using IAM roles
-- **Aurora SG egress** locked to VPC CIDR only — no internet egress from database tier
-- **Backup vault KMS-encrypted** with CMK and key rotation
-- **HTTPS-only policy** on all S3 buckets storing state, logs, and audit data
-- **IMDSv2** enforced on all EC2 instances
-- **IAM account password policy** — 14+ chars, 90-day expiry, 24 password history
-- **Redis** in-transit + at-rest encryption, auth token in Secrets Manager
-
-## Cost Optimisation Notes
-
-- NAT Gateways: 2× per region — largest recurring cost (~$65/mo each)
-- Aurora Serverless v2: 0.5–4 ACUs — scales to near-zero in off-hours
-- ElastiCache `cache.t4g.small`: Graviton2, ~$25/mo per node
-- ASG Spot instances: ~70% savings with `capacity-optimized` strategy
-- Global Accelerator: $0.025/hr + data transfer (~$18/mo base)
-- Shield Advanced: $3,000/mo — only enable for production workloads under active threat
-- Dev/staging: set `az_count = 1`, `redis_num_nodes = 1` to halve NAT + cache costs
+---
 
 ## Architecture Diagram
 
-The draw.io diagram: [`docs/draw.io-3tier.txt`](docs/draw.io-3tier.txt)  
-Open at [app.diagrams.net](https://app.diagrams.net/) → File → Open from → This Device.
+![Architecture](docs/architecture.png)
+
+> **Upload the architecture diagram:** Save the image you provided as `docs/architecture.png` in this repo.
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Terraform ≥ 1.10.0
+- AWS Account with Administrator access
+- GitHub Account (for CI/CD)
+
+### 1. Bootstrap Terraform State
+
+```bash
+cd bootstrap-state
+cp terraform.tfvars.example terraform.tfvars
+vim terraform.tfvars  # Set state_bucket_name
+terraform init && terraform apply
+```
+
+### 2. Configure Environment
+
+```bash
+cd ../environments/prod
+cp backend.hcl.example backend.hcl
+cp terraform.tfvars.example terraform.tfvars
+vim backend.hcl      # Set bucket name
+vim terraform.tfvars # Set required vars
+```
+
+### 3. Deploy
+
+```bash
+terraform init -backend-config=backend.hcl
+terraform plan -var-file=terraform.tfvars
+terraform apply
+```
+
+**Deployment time:** ~25-30 minutes
+
+---
+
+## Repository Structure
+
+```
+3-tier-app/
+├── .github/workflows/
+│   ├── terraform-pipeline.yml  # Multi-branch CI/CD
+│   ├── drift-detection.yml      # Nightly drift check
+│   └── module-release.yml       # Auto semver tagging
+├── bootstrap-state/         # S3 state bucket + KMS
+├── environments/
+│   ├── dev/
+│   ├── stage/
+│   └── prod/
+├── modules/                 # Reusable Terraform modules
+│   ├── network/             # VPC, subnets
+│   ├── compute/             # ASG, launch templates
+│   ├── alb/ nlb/            # Load balancers
+│   ├── aurora_global/       # Aurora MySQL
+│   ├── elasticache/         # Redis
+│   ├── dynamodb_global/     # DynamoDB
+│   ├── cdn/                 # CloudFront
+│   ├── waf/                 # AWS WAF
+│   ├── observability/       # Logs, metrics
+│   ├── security_hub/        # Security posture
+│   └── ... (31 modules total)
+├── docs/
+│   ├── architecture.png     # Diagram
+│   ├── oidc-setup.md        # OIDC guide
+│   └── bootstrap.md         # State setup
+├── main.tf
+├── variables.tf
+├── providers.tf
+└── README.md
+```
+
+---
+
+## CI/CD Workflow
+
+### Branch Strategy
+
+| Branch | Environment | Auto-Deploy | Approval |
+|--------|-------------|-------------|----------|
+| `feature/*` / `develop` | dev | ❌ Plan only | No |
+| `stage` | stage | ✅ Yes | No |
+| `main` | prod | ✅ Yes | ✅ Required |
+
+### Terraform Pipeline
+
+1. **Lint**: `terraform fmt`, TFLint
+2. **Security**: Checkov, tfsec, Trivy
+3. **Validate**: `terraform validate`
+4. **Plan**: Per-environment plan
+5. **Apply**: Auto (stage) / Manual approval (prod)
+
+### Drift Detection
+
+Runs nightly at 2 AM UTC:
+- Runs `terraform plan` against prod
+- Opens GitHub Issue if drift detected
+- Auto-closes when drift resolved
+
+### Module Versioning
+
+Auto-tags modules on merge to `main`:
+- `[major]` in commit → `v2.0.0`
+- `[minor]` in commit → `v1.1.0`
+- Default → `v1.0.1`
+
+---
+
+## Architecture Components
+
+### Global Layer
+- **Route53**: DNS + health checks
+- **CloudFront**: CDN with ACM certificate
+- **Global Accelerator**: Static anycast IPs
+- **IAM**: Password policy enforcement
+
+### Primary Region (us-east-1)
+- **VPC**: `10.0.0.0/16` across 3 AZs
+- **Web ASG**: t3.small (on-demand) + t3.medium (spot), 2-10 instances
+- **App ASG**: t3.small (on-demand) + t3.medium (spot), 2-10 instances
+- **ALB + NLB**: HTTPS/TCP load balancing
+- **Aurora Global MySQL**: db.r6g.large, writer in us-east-1
+- **ElastiCache Redis**: cache.r7g.large, 3-node cluster
+- **DynamoDB Global**: Session table
+
+### Secondary Region (us-west-2)
+Identical standby infrastructure:
+- VPC `10.1.0.0/16`
+- Aurora read replica
+- VPC peering for replication
+
+### Security & Compliance
+- **GuardDuty**: Threat detection
+- **Security Hub**: Security posture
+- **CloudTrail**: Audit logs (90 days)
+- **AWS Config**: Compliance monitoring
+- **WAF**: OWASP Top 10 protection
+- **Secrets Manager**: DB credentials with auto-rotation
+
+### Observability
+- **CloudWatch Logs**: ALB, VPC Flow, Lambda
+- **Kinesis Firehose**: Logs → S3 → Athena
+- **X-Ray**: Distributed tracing
+- **SNS**: Alarm notifications
+
+---
+
+## OIDC Setup
+
+Replace static AWS keys with keyless OIDC. Follow [`docs/oidc-setup.md`](docs/oidc-setup.md):
+
+1. Create GitHub OIDC provider in AWS IAM
+2. Create IAM role `github-actions-terraform`
+3. Store `AWS_OIDC_ROLE_ARN` in GitHub Secrets
+
+---
+
+## Disaster Recovery
+
+**RPO:** < 5 minutes (Aurora replication lag)  
+**RTO:** < 15 minutes (Aurora promotion + Route53 failover)
+
+### Failover Procedure
+
+```bash
+# 1. Promote Aurora in us-west-2
+aws rds promote-read-replica-db-cluster \
+  --db-cluster-identifier myapp-prod-cluster-usw2 \
+  --region us-west-2
+
+# 2. Route53 health checks auto-failover ALB
+# 3. Verify traffic shift
+watch -n 1 "curl -I https://app.example.com"
+```
+
+---
+
+## Cost Optimization
+
+**Estimated monthly cost (prod):** ~$1,467/month
+
+| Service | Cost | Notes |
+|---------|------|-------|
+| EC2 (Web + App) | $90 | Spot = 70-80% savings |
+| Aurora Global | $580 | Use Savings Plans for 30-50% off |
+| ElastiCache | $520 | r7g graviton instances |
+| DynamoDB | $30 | On-demand billing |
+| ALB + CloudFront | $125 | |
+| Global Accelerator | $60 | |
+| CloudWatch + S3 | $62 | Enable S3 Intelligent-Tiering |
+
+---
+
+## Module Versioning
+
+Pin modules to specific versions:
+
+```hcl
+# Prod: pin exact version
+module "network" {
+  source = "git::https://github.com/nithingowdahm87/3-tier-app//modules/network?ref=v1.2.0"
+}
+
+# Dev: float to latest minor
+module "alb" {
+  source = "git::https://github.com/nithingowdahm87/3-tier-app//modules/alb?ref=v1.3"
+}
+```
+
+---
+
+## Support
+
+- [OIDC Setup Guide](docs/oidc-setup.md)
+- [Bootstrap Guide](docs/bootstrap.md)
+- [GitHub Issues](https://github.com/nithingowdahm87/3-tier-app/issues)
+
+---
+
+**Built with ❤️ by [@nithingowdahm87](https://github.com/nithingowdahm87)**
