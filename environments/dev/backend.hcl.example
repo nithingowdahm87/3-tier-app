@@ -1,5 +1,9 @@
-bucket         = "<your-terraform-state-bucket>"
-key            = "3tier-app/dev/terraform.tfstate"
-region         = "us-east-1"
-dynamodb_table = "<your-lock-table>"
-encrypt        = true
+# Dev environment backend config
+# Usage: terraform init -backend-config=backend.hcl (copy this to backend.hcl and fill in values)
+# NOTE: S3 native locking used (use_lockfile=true) — no DynamoDB table required. Terraform >= 1.10.
+
+bucket       = "<your-terraform-state-bucket>"
+key          = "dev/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

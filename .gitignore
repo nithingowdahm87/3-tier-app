@@ -11,9 +11,21 @@ crash.*.log
 terraform.tfvars
 *.auto.tfvars
 
-# Backend config with real bucket/table names
+# Backend config files with real bucket names (NEVER commit these)
 backend.hcl
+ci-backend.hcl
+
+# CI-generated plan and drift output files
+plan_output.txt
+drift_output.txt
+tfplan
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
