@@ -4,11 +4,10 @@ variable "primary_region" {
 }
 
 variable "state_bucket_name" {
-  type    = string
-  default = "my-app-tfstate-prod-2026"
+  type        = string
+  default     = "my-app-tfstate-prod-2026"
+  description = "Name of the S3 bucket to store Terraform state. Must be globally unique."
 }
 
-variable "lock_table_name" {
-  type    = string
-  default = "terraform-state-lock"
-}
+# lock_table_name removed — DynamoDB lock table is no longer used.
+# S3 native locking (use_lockfile=true) is used instead. Requires Terraform >= 1.10.

@@ -1,16 +1,16 @@
-# ─── PROD Environment ─────────────────────────────────────────────────────────
+# ─── PROD Environment ─────────────────────────────────────────────
 # Full production sizing. Multi-AZ, HA Redis, full autoscaling.
+# Deploy: terraform init -backend-config=backend.hcl && terraform apply -var-file=terraform.tfvars
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"   # 1.10+ required for S3 native locking (use_lockfile=true)
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
     tls = { source = "hashicorp/tls", version = "~> 4.0" }
   }
-  backend "s3" {
-    key     = "3tier-app/prod/terraform.tfstate"
-    encrypt = true
-  }
+  # Backend key is injected via -backend-config (backend.hcl locally, ci-backend.hcl in CI)
+  # Do NOT hardcode key here — it is set to prod/terraform.tfstate at init time
+  backend "s3" {}
 }
 
 provider "aws" {

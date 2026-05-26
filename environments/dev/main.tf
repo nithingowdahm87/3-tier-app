@@ -1,17 +1,16 @@
-# ─── DEV Environment ──────────────────────────────────────────────────────────
+# ─── DEV Environment ──────────────────────────────────────────────
 # Fully isolated state (separate S3 prefix), separate tfvars, low-cost sizing.
-# Deploy: terraform init -backend-config=backend.hcl && terraform apply
+# Deploy: terraform init -backend-config=backend.hcl && terraform apply -var-file=terraform.tfvars
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"   # 1.10+ required for S3 native locking (use_lockfile=true)
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
     tls = { source = "hashicorp/tls", version = "~> 4.0" }
   }
-  backend "s3" {
-    key     = "3tier-app/dev/terraform.tfstate"
-    encrypt = true
-  }
+  # Backend key is injected via -backend-config (backend.hcl locally, ci-backend.hcl in CI)
+  # Do NOT hardcode key here — it is set to dev/terraform.tfstate at init time
+  backend "s3" {}
 }
 
 provider "aws" {
