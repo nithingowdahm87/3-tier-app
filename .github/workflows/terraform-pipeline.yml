@@ -1,9 +1,9 @@
 # Multi-branch Terraform pipeline
 # Branch strategy:
-#   feature/*  → lint + security + validate + plan (dev)
-#   develop    → lint + security + validate + plan (dev)
-#   stage      → lint + security + validate + plan + apply (stage)  [auto]
-#   main       → lint + security + validate + plan + apply (prod)   [requires manual approval via GitHub Environment]
+#   feature/*  → lint + security (checkov + tfsec + trivy) + validate + plan (dev)
+#   develop    → lint + security (checkov + tfsec + trivy) + validate + plan (dev)
+#   stage      → lint + security + validate + plan + apply (stage) [auto]
+#   main       → lint + security + validate + plan + apply (prod)  [manual approval via GitHub Environment]
 
 name: Terraform Multi-Branch Pipeline
 
@@ -23,7 +23,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write   # ready for OIDC migration away from static AWS keys
+  id-token: write   # ready for OIDC: replace static keys with aws-actions/configure-aws-credentials@v4
 
 env:
   TF_VERSION: "~> 1.10"   # 1.10+ required for S3 native locking (use_lockfile=true)
@@ -54,7 +54,7 @@ jobs:
           tflint --init
           tflint --recursive
 
-  # ── 2. SECURITY ──────────────────────────────────────
+  # ── 2. SECURITY (Checkov + tfsec + Trivy IaC) ────────────────
   security:
     name: "Security Scan"
     runs-on: ubuntu-latest
@@ -74,6 +74,15 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           soft_fail: false
+
+      - name: Run Trivy IaC scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
 
   # ── 3. VALIDATE ──────────────────────────────────────
   validate:
@@ -103,6 +112,11 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION:            us-east-1
       TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
+      # TODO: migrate to OIDC for keyless auth:
+      # - uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: arn:aws:iam::ACCOUNT:role/github-actions-terraform
+      #     aws-region: us-east-1
 
     steps:
       - uses: actions/checkout@v4

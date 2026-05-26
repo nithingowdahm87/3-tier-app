@@ -2,7 +2,7 @@ provider "aws" {
   region = var.primary_region
 }
 
-# Customer-managed KMS key for state bucket + lock table
+# Customer-managed KMS key for state bucket
 resource "aws_kms_key" "tfstate" {
   description             = "KMS key for Terraform state bucket encryption"
   deletion_window_in_days = 10
@@ -11,6 +11,10 @@ resource "aws_kms_key" "tfstate" {
   tags = {
     Name      = "terraform-state-kms"
     ManagedBy = "terraform"
+  }
+
+  lifecycle {
+    prevent_destroy = true  # never accidentally destroy the state encryption key
   }
 }
 
@@ -27,6 +31,10 @@ resource "aws_s3_bucket" "tfstate" {
     Name        = "terraform-state"
     Environment = "prod"
     ManagedBy   = "terraform"
+  }
+
+  lifecycle {
+    prevent_destroy = true  # never accidentally destroy the state bucket
   }
 }
 
@@ -78,30 +86,11 @@ resource "aws_s3_bucket_policy" "tfstate_https_only" {
   })
 }
 
-resource "aws_dynamodb_table" "tflock" {
-  name         = var.lock_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
+# NOTE: DynamoDB lock table removed — using S3 native locking (use_lockfile=true)
+# Requires Terraform >= 1.10. S3 bucket versioning above is the prerequisite.
+# If you have an existing aws_dynamodb_table.tflock, run:
+#   terraform destroy -target=aws_dynamodb_table.tflock
+# before removing it from this file.
 
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  server_side_encryption {
-    enabled     = true
-    kms_key_arn = aws_kms_key.tfstate.arn
-  }
-
-  point_in_time_recovery { enabled = true }
-
-  tags = {
-    Name        = "terraform-state-lock"
-    Environment = "prod"
-    ManagedBy   = "terraform"
-  }
-}
-
-output "state_bucket"  { value = aws_s3_bucket.tfstate.bucket }
-output "lock_table"    { value = aws_dynamodb_table.tflock.name }
-output "kms_key_arn"   { value = aws_kms_key.tfstate.arn }
+output "state_bucket" { value = aws_s3_bucket.tfstate.bucket }
+output "kms_key_arn"  { value = aws_kms_key.tfstate.arn }

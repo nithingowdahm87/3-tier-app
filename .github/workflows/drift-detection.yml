@@ -1,0 +1,122 @@
+# Nightly drift detection for prod Terraform state
+# Runs terraform plan against real AWS infra every night at 2 AM UTC.
+# If drift is detected (plan has changes), opens a GitHub Issue automatically.
+# Closes the issue automatically on the next clean run.
+
+name: Terraform Drift Detection
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 2 AM UTC = 7:30 AM IST
+  workflow_dispatch:       # manual trigger for on-demand drift check
+
+permissions:
+  contents: read
+  issues: write            # needed to open/close drift issues
+
+env:
+  TF_VERSION: "~> 1.10"
+
+jobs:
+  drift-check:
+    name: "Drift Check (prod)"
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION:            us-east-1
+      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Write backend config
+        run: |
+          cat > ci-backend.hcl <<EOF
+          bucket       = "${{ env.TF_BACKEND_BUCKET }}"
+          region       = "us-east-1"
+          key          = "prod/terraform.tfstate"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+
+      - name: Terraform Init
+        run: terraform init -backend-config=ci-backend.hcl
+
+      - name: Terraform Plan (drift check)
+        id: plan
+        run: |
+          terraform plan \
+            -var-file=environments/prod/terraform.tfvars \
+            -detailed-exitcode \
+            -no-color 2>&1 | tee drift_output.txt
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+        # terraform plan -detailed-exitcode:
+        #   exit 0 = no changes (no drift)
+        #   exit 1 = error
+        #   exit 2 = changes detected (drift!)
+
+      - name: Open drift issue if changes detected
+        if: steps.plan.outputs.EXIT_CODE == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const drift = fs.readFileSync('drift_output.txt', 'utf8').slice(0, 60000);
+            const date  = new Date().toISOString().split('T')[0];
+
+            // Check for existing open drift issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              state: 'open',
+              labels: 'terraform-drift'
+            });
+
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner:  context.repo.owner,
+                repo:   context.repo.repo,
+                title:  `⚠️ Terraform Drift Detected in prod (${date})`,
+                labels: ['terraform-drift'],
+                body:   `## Terraform Drift Detected\n\nThe nightly drift check found that the **prod** environment has drifted from the Terraform state.\n\nThis means someone may have made manual changes to AWS resources.\n\n<details><summary>Plan Output</summary>\n\n\`\`\`hcl\n${drift}\n\`\`\`\n</details>\n\n**Action required:** Review the plan output and either:\n1. Run \`terraform apply\` to reconcile drift back to IaC state, OR\n2. Update the Terraform code to reflect the intended real-world state.`
+              });
+            }
+
+      - name: Close existing drift issue if no drift
+        if: steps.plan.outputs.EXIT_CODE == '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              state: 'open',
+              labels: 'terraform-drift'
+            });
+            for (const issue of issues.data) {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: issue.number,
+                body:         '✅ Drift resolved — prod state is clean as of ' + new Date().toISOString()
+              });
+              await github.rest.issues.update({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: issue.number,
+                state:        'closed'
+              });
+            }
+
+      - name: Fail job if plan errored (exit code 1)
+        if: steps.plan.outputs.EXIT_CODE == '1'
+        run: exit 1
