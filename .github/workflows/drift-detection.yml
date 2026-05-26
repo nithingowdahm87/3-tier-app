@@ -2,6 +2,9 @@
 # Runs terraform plan against real AWS infra every night at 2 AM UTC (7:30 AM IST).
 # If drift is detected (plan has changes), opens a GitHub Issue automatically.
 # Closes the issue automatically on the next clean run.
+#
+# Auth: OIDC keyless authentication — no static AWS keys needed.
+# Required IAM role: arn:aws:iam::ACCOUNT_ID:role/github-actions-terraform
 
 name: Terraform Drift Detection
 
@@ -12,26 +15,32 @@ on:
 
 permissions:
   contents: read
-  issues: write            # open/close drift issues
-  pull-requests: write     # future-proof: comment on PRs if needed
+  issues: write          # open/close drift issues
+  pull-requests: write   # future-proof: comment on PRs if needed
+  id-token: write        # OIDC token generation
 
 env:
   TF_VERSION: "~> 1.10"
+  AWS_REGION: us-east-1
+  OIDC_ROLE: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+  TF_BACKEND_BUCKET: ${{ secrets.TF_BACKEND_BUCKET }}
 
 jobs:
   drift-check:
     name: "Drift Check (prod)"
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION:            us-east-1
-      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: terraform-drift-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -42,7 +51,7 @@ jobs:
         run: |
           cat > ci-backend.hcl <<EOF
           bucket       = "${{ env.TF_BACKEND_BUCKET }}"
-          region       = "us-east-1"
+          region       = "${{ env.AWS_REGION }}"
           key          = "prod/terraform.tfstate"
           encrypt      = true
           use_lockfile = true
@@ -51,7 +60,7 @@ jobs:
       - name: Terraform Init
         run: terraform init -backend-config=ci-backend.hcl
 
-      - name: Terraform Plan (drift check)
+      - name: Terraform Plan (drift detection)
         id: plan
         run: |
           set +e
@@ -62,35 +71,33 @@ jobs:
           TF_EXIT=${PIPESTATUS[0]}
           echo "EXIT_CODE=${TF_EXIT}" >> $GITHUB_OUTPUT
           set -e
-        # terraform plan -detailed-exitcode exit codes:
-        #   0 = no changes (no drift)
-        #   1 = error
-        #   2 = changes detected (drift!)
+          # terraform plan -detailed-exitcode exit codes:
+          # 0 = no changes (no drift)
+          # 1 = error
+          # 2 = changes detected (drift!)
 
       - name: Open drift issue if changes detected
         if: steps.plan.outputs.EXIT_CODE == '2'
         uses: actions/github-script@v7
         with:
           script: |
-            const fs   = require('fs');
+            const fs = require('fs');
             const drift = fs.readFileSync('drift_output.txt', 'utf8').slice(0, 60000);
             const date  = new Date().toISOString().split('T')[0];
-
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo:  context.repo.repo,
               state: 'open',
               labels: 'terraform-drift'
             });
-
             if (issues.data.length === 0) {
               await github.rest.issues.create({
                 owner:  context.repo.owner,
                 repo:   context.repo.repo,
-                title:  `⚠️ Terraform Drift Detected in prod (${date})`,
+                title:  `\u26a0\ufe0f Terraform Drift Detected in prod (${date})`,
                 labels: ['terraform-drift'],
                 body: [
-                  '## ⚠️ Terraform Drift Detected',
+                  '## \u26a0\ufe0f Terraform Drift Detected',
                   '',
                   'The nightly drift check found that **prod** has drifted from Terraform state.',
                   'This likely means someone made a manual change to AWS resources.',
@@ -100,6 +107,7 @@ jobs:
                   '```hcl',
                   drift,
                   '```',
+                  '',
                   '</details>',
                   '',
                   '**Action required — choose one:**',
@@ -108,12 +116,11 @@ jobs:
                 ].join('\n')
               });
             } else {
-              // Update existing open drift issue with latest plan output
               await github.rest.issues.createComment({
                 owner:        context.repo.owner,
                 repo:         context.repo.repo,
                 issue_number: issues.data[0].number,
-                body: `🔄 Drift still present as of ${date}\n\n<details><summary>Latest Plan</summary>\n\n\`\`\`hcl\n${drift}\n\`\`\`\n</details>`
+                body: `\ud83d\udd04 Drift still present as of ${date}\n\n<details><summary>Latest Plan</summary>\n\n\`\`\`hcl\n${drift}\n\`\`\`\n</details>`
               });
             }
 
@@ -133,13 +140,13 @@ jobs:
                 owner:        context.repo.owner,
                 repo:         context.repo.repo,
                 issue_number: issue.number,
-                body:         '✅ Drift resolved — prod state is clean as of ' + new Date().toISOString()
+                body: '\u2705 Drift resolved \u2014 prod state is clean as of ' + new Date().toISOString()
               });
               await github.rest.issues.update({
                 owner:        context.repo.owner,
                 repo:         context.repo.repo,
                 issue_number: issue.number,
-                state:        'closed'
+                state: 'closed'
               });
             }
 
