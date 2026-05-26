@@ -1,0 +1,104 @@
+# Module Release Workflow
+# Automatically creates a Git tag (vX.Y.Z) when a PR is merged into main
+# that modifies anything under the modules/ directory.
+#
+# Versioning strategy:
+#   - Commit message contains [major] -> bump major (v1.0.0 -> v2.0.0)
+#   - Commit message contains [minor] -> bump minor (v1.0.0 -> v1.1.0)
+#   - Default                         -> bump patch (v1.0.0 -> v1.0.1)
+#
+# After tagging, environments can pin module versions via:
+#   source = "git::https://github.com/nithingowdahm87/3-tier-app//modules/network?ref=v1.2.0"
+
+name: Module Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'modules/**'
+
+permissions:
+  contents: write   # needed to create tags and GitHub Releases
+
+jobs:
+  tag-release:
+    name: "Tag & Release modules"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for tag calculation
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          # Get the latest semver tag, default to v0.0.0 if none exists
+          LATEST=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          echo "LATEST=${LATEST:-v0.0.0}" >> $GITHUB_OUTPUT
+
+      - name: Calculate next version
+        id: next_version
+        run: |
+          LATEST="${{ steps.latest_tag.outputs.LATEST }}"
+          MAJOR=$(echo $LATEST | cut -d. -f1 | tr -d 'v')
+          MINOR=$(echo $LATEST | cut -d. -f2)
+          PATCH=$(echo $LATEST | cut -d. -f3)
+
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+
+          if echo "$COMMIT_MSG" | grep -qi '\[major\]'; then
+            MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+          elif echo "$COMMIT_MSG" | grep -qi '\[minor\]'; then
+            MINOR=$((MINOR + 1)); PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "NEXT_TAG=${NEXT_TAG}" >> $GITHUB_OUTPUT
+          echo "Next version: ${NEXT_TAG}"
+
+      - name: Create Git tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.next_version.outputs.NEXT_TAG }}" \
+            -m "Release ${{ steps.next_version.outputs.NEXT_TAG }}: module changes merged to main"
+          git push origin "${{ steps.next_version.outputs.NEXT_TAG }}"
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag  = '${{ steps.next_version.outputs.NEXT_TAG }}';
+            const prev = '${{ steps.latest_tag.outputs.LATEST }}';
+            const { data: commits } = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              basehead: `${prev}...${tag}`
+            });
+            const changelog = commits.commits
+              .map(c => `- ${c.commit.message.split('\n')[0]} (${c.sha.slice(0,7)})`)
+              .join('\n');
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              tag_name: tag,
+              name: `${tag} \u2014 Module Release`,
+              body: [
+                '## Changes in this release',
+                '',
+                changelog,
+                '',
+                '## Pin this version in your environment',
+                '```hcl',
+                '# Example: pin the network module to this exact release',
+                `source = "git::https://github.com/nithingowdahm87/3-tier-app//modules/network?ref=${tag}"`,
+                '```',
+              ].join('\n'),
+              draft: false,
+              prerelease: false
+            });
