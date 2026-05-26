@@ -1,9 +1,14 @@
 # Multi-branch Terraform pipeline
 # Branch strategy:
-#   feature/*  → lint + security (checkov + tfsec + trivy) + validate + plan (dev)
-#   develop    → lint + security (checkov + tfsec + trivy) + validate + plan (dev)
-#   stage      → lint + security + validate + plan + apply (stage) [auto]
-#   main       → lint + security + validate + plan + apply (prod)  [manual approval via GitHub Environment]
+#   feature/*  -> lint + security (checkov + tfsec + trivy) + validate + plan (dev)
+#   develop    -> lint + security (checkov + tfsec + trivy) + validate + plan (dev)
+#   stage      -> lint + security + validate + plan + apply (stage) [auto]
+#   main       -> lint + security + validate + plan + apply (prod)  [manual approval via GitHub Environment]
+#
+# Auth: OIDC keyless authentication via aws-actions/configure-aws-credentials@v4
+# No static AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY needed.
+# Required IAM role: arn:aws:iam::ACCOUNT_ID:role/github-actions-terraform
+# Trust policy subject: repo:nithingowdahm87/3-tier-app:*
 
 name: Terraform Multi-Branch Pipeline
 
@@ -23,13 +28,16 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write   # ready for OIDC: replace static keys with aws-actions/configure-aws-credentials@v4
+  id-token: write   # OIDC token generation
 
 env:
   TF_VERSION: "~> 1.10"   # 1.10+ required for S3 native locking (use_lockfile=true)
+  AWS_REGION: us-east-1
+  OIDC_ROLE: ${{ secrets.AWS_OIDC_ROLE_ARN }}        # arn:aws:iam::ACCOUNT:role/github-actions-terraform
+  TF_BACKEND_BUCKET: ${{ secrets.TF_BACKEND_BUCKET }}
 
 jobs:
-  # ── 1. LINT ──────────────────────────────────────────
+  # -- 1. LINT -------------------------------------------------------
   lint:
     name: "Lint & Format"
     runs-on: ubuntu-latest
@@ -54,7 +62,7 @@ jobs:
           tflint --init
           tflint --recursive
 
-  # ── 2. SECURITY (Checkov + tfsec + Trivy IaC) ────────────────
+  # -- 2. SECURITY (Checkov + tfsec + Trivy IaC) ---------------------
   security:
     name: "Security Scan"
     runs-on: ubuntu-latest
@@ -84,7 +92,7 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
 
-  # ── 3. VALIDATE ──────────────────────────────────────
+  # -- 3. VALIDATE ---------------------------------------------------
   validate:
     name: "Terraform Validate"
     runs-on: ubuntu-latest
@@ -102,24 +110,20 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-  # ── 4. PLAN ───────────────────────────────────────────
+  # -- 4. PLAN -------------------------------------------------------
   plan:
     name: "Terraform Plan (${{ github.ref_name }})"
     runs-on: ubuntu-latest
     needs: [lint, security, validate]
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION:            us-east-1
-      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
-      # TODO: migrate to OIDC for keyless auth:
-      # - uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: arn:aws:iam::ACCOUNT:role/github-actions-terraform
-      #     aws-region: us-east-1
-
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: terraform-plan-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -148,7 +152,7 @@ jobs:
         run: |
           cat > ci-backend.hcl <<EOF
           bucket       = "${{ env.TF_BACKEND_BUCKET }}"
-          region       = "us-east-1"
+          region       = "${{ env.AWS_REGION }}"
           key          = "${{ steps.env.outputs.STATE_KEY }}"
           encrypt      = true
           use_lockfile = true
@@ -183,7 +187,7 @@ jobs:
             const fs = require('fs');
             const plan = fs.readFileSync('plan_output.txt', 'utf8').slice(0, 60000);
             const status = '${{ steps.plan.outcome }}';
-            const emoji  = status === 'success' ? '✅' : '❌';
+            const emoji  = status === 'success' ? '\u2705' : '\u274c';
             const env    = '${{ steps.env.outputs.ENV_NAME }}';
             const body   = `## ${emoji} Terraform Plan \`${env}\` — \`${status}\`\n\n<details><summary>Show Plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
             github.rest.issues.createComment({
@@ -197,21 +201,22 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-  # ── 5. APPLY — stage (auto) ───────────────────────────
+  # -- 5. APPLY — stage (auto) ---------------------------------------
   apply-stage:
     name: "Terraform Apply (stage)"
     runs-on: ubuntu-latest
     needs: plan
     if: github.ref == 'refs/heads/stage' && github.event_name == 'push'
-    environment: stage     # no required reviewers → auto-deploys
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION:            us-east-1
-      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
-
+    environment: stage   # no required reviewers -> auto-deploys
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: terraform-apply-stage-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -222,7 +227,7 @@ jobs:
         run: |
           cat > ci-backend.hcl <<EOF
           bucket       = "${{ env.TF_BACKEND_BUCKET }}"
-          region       = "us-east-1"
+          region       = "${{ env.AWS_REGION }}"
           key          = "stage/terraform.tfstate"
           encrypt      = true
           use_lockfile = true
@@ -239,21 +244,22 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
 
-  # ── 6. APPLY — prod (manual approval) ────────────────
+  # -- 6. APPLY — prod (manual approval gate) ------------------------
   apply-prod:
     name: "Terraform Apply (prod)"
     runs-on: ubuntu-latest
     needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: prod      # ← set "Required reviewers" in GitHub Settings → Environments
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION:            us-east-1
-      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
-
+    environment: prod    # <- set "Required reviewers" in GitHub Settings -> Environments
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: terraform-apply-prod-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -264,7 +270,7 @@ jobs:
         run: |
           cat > ci-backend.hcl <<EOF
           bucket       = "${{ env.TF_BACKEND_BUCKET }}"
-          region       = "us-east-1"
+          region       = "${{ env.AWS_REGION }}"
           key          = "prod/terraform.tfstate"
           encrypt      = true
           use_lockfile = true
