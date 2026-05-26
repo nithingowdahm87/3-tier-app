@@ -1,0 +1,268 @@
+# Multi-branch Terraform pipeline
+# Branch strategy:
+#   feature/*  → lint + security + validate + plan (dev)
+#   develop    → lint + security + validate + plan (dev)
+#   stage      → lint + security + validate + plan + apply (stage)  [auto]
+#   main       → lint + security + validate + plan + apply (prod)   [requires manual approval via GitHub Environment]
+
+name: Terraform Multi-Branch Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - stage
+      - develop
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+      - stage
+      - develop
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write   # ready for OIDC migration away from static AWS keys
+
+env:
+  TF_VERSION: "~> 1.10"   # 1.10+ required for S3 native locking (use_lockfile=true)
+
+jobs:
+  # ── 1. LINT ──────────────────────────────────────────
+  lint:
+    name: "Lint & Format"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint --recursive
+
+  # ── 2. SECURITY ──────────────────────────────────────
+  security:
+    name: "Security Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov (IaC security scanner)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          soft_fail: false
+          output_format: github_failed_only
+          download_external_modules: false
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: false
+
+  # ── 3. VALIDATE ──────────────────────────────────────
+  validate:
+    name: "Terraform Validate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+  # ── 4. PLAN ───────────────────────────────────────────
+  plan:
+    name: "Terraform Plan (${{ github.ref_name }})"
+    runs-on: ubuntu-latest
+    needs: [lint, security, validate]
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION:            us-east-1
+      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Resolve environment from branch
+        id: env
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          if [[ "$BRANCH" == "main" ]]; then
+            echo "TFVARS=environments/prod/terraform.tfvars" >> $GITHUB_OUTPUT
+            echo "ENV_NAME=prod"  >> $GITHUB_OUTPUT
+            echo "STATE_KEY=prod/terraform.tfstate" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == "stage" ]]; then
+            echo "TFVARS=environments/stage/terraform.tfvars" >> $GITHUB_OUTPUT
+            echo "ENV_NAME=stage" >> $GITHUB_OUTPUT
+            echo "STATE_KEY=stage/terraform.tfstate" >> $GITHUB_OUTPUT
+          else
+            echo "TFVARS=environments/dev/terraform.tfvars" >> $GITHUB_OUTPUT
+            echo "ENV_NAME=dev"   >> $GITHUB_OUTPUT
+            echo "STATE_KEY=dev/terraform.tfstate" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Write backend config
+        run: |
+          cat > ci-backend.hcl <<EOF
+          bucket       = "${{ env.TF_BACKEND_BUCKET }}"
+          region       = "us-east-1"
+          key          = "${{ steps.env.outputs.STATE_KEY }}"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+
+      - name: Terraform Init
+        run: terraform init -backend-config=ci-backend.hcl
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan \
+            -var-file=${{ steps.env.outputs.TFVARS }} \
+            -out=tfplan \
+            -no-color 2>&1 | tee plan_output.txt
+        continue-on-error: true
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ steps.env.outputs.ENV_NAME }}
+          path: |
+            tfplan
+            plan_output.txt
+          retention-days: 5
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('plan_output.txt', 'utf8').slice(0, 60000);
+            const status = '${{ steps.plan.outcome }}';
+            const emoji  = status === 'success' ? '✅' : '❌';
+            const env    = '${{ steps.env.outputs.ENV_NAME }}';
+            const body   = `## ${emoji} Terraform Plan \`${env}\` — \`${status}\`\n\n<details><summary>Show Plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              body
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ── 5. APPLY — stage (auto) ───────────────────────────
+  apply-stage:
+    name: "Terraform Apply (stage)"
+    runs-on: ubuntu-latest
+    needs: plan
+    if: github.ref == 'refs/heads/stage' && github.event_name == 'push'
+    environment: stage     # no required reviewers → auto-deploys
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION:            us-east-1
+      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Write backend config
+        run: |
+          cat > ci-backend.hcl <<EOF
+          bucket       = "${{ env.TF_BACKEND_BUCKET }}"
+          region       = "us-east-1"
+          key          = "stage/terraform.tfstate"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+
+      - name: Terraform Init
+        run: terraform init -backend-config=ci-backend.hcl
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-stage
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+  # ── 6. APPLY — prod (manual approval) ────────────────
+  apply-prod:
+    name: "Terraform Apply (prod)"
+    runs-on: ubuntu-latest
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: prod      # ← set "Required reviewers" in GitHub Settings → Environments
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION:            us-east-1
+      TF_BACKEND_BUCKET:     ${{ secrets.TF_BACKEND_BUCKET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Write backend config
+        run: |
+          cat > ci-backend.hcl <<EOF
+          bucket       = "${{ env.TF_BACKEND_BUCKET }}"
+          region       = "us-east-1"
+          key          = "prod/terraform.tfstate"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+
+      - name: Terraform Init
+        run: terraform init -backend-config=ci-backend.hcl
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-prod
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan

@@ -5,9 +5,12 @@
 #   terraform init -backend-config=backend.hcl
 #
 # backend.hcl (with real values) is gitignored — NEVER commit it.
-# Pre-requisite: run bootstrap-state/ first to create the S3 bucket and DynamoDB lock table.
+# Pre-requisite: run bootstrap-state/ first to create the S3 bucket (versioning enabled).
+#
+# NOTE: S3 native locking (use_lockfile = true) is used — no DynamoDB table required.
+# Requires Terraform >= 1.10 and S3 bucket versioning enabled (already configured in bootstrap-state).
 
-bucket         = "REPLACE_WITH_YOUR_STATE_BUCKET"   # e.g. myapp-prod-tfstate-123456789012
-region         = "us-east-1"
-dynamodb_table = "REPLACE_WITH_YOUR_LOCK_TABLE"     # e.g. myapp-prod-tfstate-lock
-encrypt        = true
+bucket       = "REPLACE_WITH_YOUR_STATE_BUCKET"   # e.g. myapp-prod-tfstate-123456789012
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true
