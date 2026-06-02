@@ -340,6 +340,53 @@ module "app_asg_primary" {
   tags                    = local.common_tags
 }
 
+# ─── Secondary Compute (Web + App ASGs) ───────────────────────────────────────
+# These ASGs sit in us-west-2 and serve traffic during failover.
+# They are warm standby: running at minimum size, scaling up on failover.
+# Scale them up via the secondary ALB target group on failover.
+
+module "web_asg_secondary" {
+  source    = "./modules/compute"
+  providers = { aws = aws.secondary }
+
+  name_prefix             = "${var.project_name}-${var.environment}-secondary"
+  role                    = "web"
+  instance_type           = var.web_instance_type
+  fallback_instance_type  = var.web_fallback_instance_type
+  key_name                = module.keypair.key_name
+  security_group_ids      = [module.security_secondary.web_sg_id]
+  subnet_ids              = module.network_secondary.private_subnet_ids
+  target_group_arns       = [module.alb_secondary.web_target_group_arn]
+  min_size                = var.web_min_size
+  max_size                = var.web_max_size
+  desired_capacity        = var.web_desired_capacity
+  on_demand_base_capacity = var.on_demand_base_capacity
+  user_data               = var.web_user_data
+  secret_path_prefix      = "/${var.environment}"
+  tags                    = local.common_tags
+}
+
+module "app_asg_secondary" {
+  source    = "./modules/compute"
+  providers = { aws = aws.secondary }
+
+  name_prefix             = "${var.project_name}-${var.environment}-secondary"
+  role                    = "app"
+  instance_type           = var.app_instance_type
+  fallback_instance_type  = var.app_fallback_instance_type
+  key_name                = module.keypair.key_name
+  security_group_ids      = [module.security_secondary.app_sg_id]
+  subnet_ids              = module.network_secondary.private_subnet_ids
+  target_group_arns       = [module.alb_secondary.app_target_group_arn]
+  min_size                = var.app_min_size
+  max_size                = var.app_max_size
+  desired_capacity        = var.app_desired_capacity
+  on_demand_base_capacity = var.on_demand_base_capacity
+  user_data               = var.app_user_data
+  secret_path_prefix      = "/${var.environment}"
+  tags                    = local.common_tags
+}
+
 # ─── Database (Aurora Global) ─────────────────────────────────────────────────
 
 module "aurora" {
@@ -464,6 +511,7 @@ module "guardduty" {
 }
 
 # ─── Security Hub ─────────────────────────────────────────────────────────────
+# Enabled in BOTH regions so the secondary region's findings are captured.
 
 module "security_hub" {
   source    = "./modules/security_hub"
@@ -475,11 +523,33 @@ module "security_hub" {
   tags                 = local.common_tags
 }
 
+module "security_hub_secondary" {
+  source    = "./modules/security_hub"
+  providers = { aws = aws.secondary }
+
+  name_prefix          = "${var.project_name}-${var.environment}"
+  region               = var.secondary_region
+  alerts_sns_topic_arn = module.alerting.sns_topic_arn
+  tags                 = local.common_tags
+}
+
 # ─── AWS Config ───────────────────────────────────────────────────────────────
+# Enabled in BOTH regions: AWS Config is regional and rules only evaluate
+# resources in the region where Config is enabled.
 
 module "config_rules" {
   source    = "./modules/config_rules"
   providers = { aws = aws.primary }
+
+  name_prefix    = "${var.project_name}-${var.environment}"
+  bucket_name    = var.config_bucket_name
+  aws_account_id = var.aws_account_id
+  tags           = local.common_tags
+}
+
+module "config_rules_secondary" {
+  source    = "./modules/config_rules"
+  providers = { aws = aws.secondary }
 
   name_prefix    = "${var.project_name}-${var.environment}"
   bucket_name    = var.config_bucket_name
@@ -508,6 +578,25 @@ module "observability" {
   tags                = local.common_tags
 }
 
+# Secondary observability stack in us-west-2.
+# waf_secondary MUST log to this region-local Firehose — WAF cannot deliver
+# logs to a Kinesis Firehose in another region (ARNs are region-scoped).
+module "observability_secondary" {
+  source    = "./modules/observability"
+  providers = { aws = aws.secondary }
+
+  name_prefix         = "${var.project_name}-${var.environment}-secondary"
+  logs_bucket_name    = "${var.logs_bucket_name}-secondary"
+  alb_arn_suffix      = module.alb_secondary.external_alb_arn_suffix
+  web_asg_name        = module.web_asg_secondary.asg_name
+  app_asg_name        = module.app_asg_secondary.asg_name
+  aurora_cluster_id   = module.aurora.secondary_cluster_id
+  dynamodb_table_name = module.dynamodb.table_name
+  waf_acl_name        = ""  # set to module.waf_secondary.web_acl_id after WAF is deployed
+  region              = var.secondary_region
+  tags                = local.common_tags
+}
+
 # ─── Alerting (SNS + CloudWatch Alarms + ASG Notifications) ──────────────────
 
 module "alerting" {
@@ -530,6 +619,7 @@ module "alerting" {
 
 # ─── WAF + Shield Advanced ────────────────────────────────────────────────────
 # WAF is deployed in BOTH regions to protect primary and secondary ALBs equally.
+# Each WAF logs to its region-local Firehose (observability / observability_secondary).
 
 module "waf" {
   source    = "./modules/waf"
@@ -546,10 +636,13 @@ module "waf_secondary" {
   source    = "./modules/waf"
   providers = { aws = aws.secondary }
 
-  name_prefix             = "${var.project_name}-${var.environment}-secondary"
-  alb_arn                 = module.alb_secondary.external_alb_arn
-  nlb_arn                 = module.nlb_secondary.nlb_arn
-  waf_log_destination_arn = module.observability.firehose_arn
+  name_prefix = "${var.project_name}-${var.environment}-secondary"
+  alb_arn     = module.alb_secondary.external_alb_arn
+  nlb_arn     = module.nlb_secondary.nlb_arn
+  # Fixed: was incorrectly using primary region Firehose ARN.
+  # Kinesis Firehose is region-scoped — WAF can only deliver logs to a Firehose
+  # in the same region. Now correctly points to the secondary region Firehose.
+  waf_log_destination_arn = module.observability_secondary.firehose_arn
   tags                    = local.common_tags
 }
 
@@ -621,6 +714,34 @@ resource "aws_autoscaling_policy" "app_cpu" {
   provider               = aws.primary
   name                   = "${var.project_name}-${var.environment}-primary-app-cpu-tracking"
   autoscaling_group_name = module.app_asg_primary.asg_name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60.0
+  }
+}
+
+resource "aws_autoscaling_policy" "web_cpu_secondary" {
+  provider               = aws.secondary
+  name                   = "${var.project_name}-${var.environment}-secondary-web-cpu-tracking"
+  autoscaling_group_name = module.web_asg_secondary.asg_name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60.0
+  }
+}
+
+resource "aws_autoscaling_policy" "app_cpu_secondary" {
+  provider               = aws.secondary
+  name                   = "${var.project_name}-${var.environment}-secondary-app-cpu-tracking"
+  autoscaling_group_name = module.app_asg_secondary.asg_name
   policy_type            = "TargetTrackingScaling"
 
   target_tracking_configuration {
