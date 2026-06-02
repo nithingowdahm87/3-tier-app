@@ -3,6 +3,8 @@ locals {
     Project     = var.project_name
     Environment = var.environment
     ManagedBy   = "terraform"
+    Owner       = var.owner_tag
+    CostCenter  = var.cost_center_tag
   }
 }
 
@@ -21,7 +23,7 @@ resource "aws_iam_account_password_policy" "strict" {
   password_reuse_prevention      = 24
 }
 
-# ─── ALB Access Logs S3 Bucket ───────────────────────────────────────────────
+# ─── ALB Access Logs S3 Bucket ────────────────────────────────────────────────
 
 module "logging" {
   source    = "./modules/logging"
@@ -261,9 +263,6 @@ module "alb_secondary" {
 }
 
 # ─── DNS + ACM Certificate ────────────────────────────────────────────────────
-# Bootstrapping order (fresh account):
-#   Step 1: terraform apply -target=module.nlb_primary -target=module.nlb_secondary
-#   Step 2: terraform apply (full apply — certs validate via Route53 DNS)
 
 module "dns_cert" {
   source    = "./modules/dns_cert"
@@ -343,7 +342,6 @@ module "app_asg_primary" {
 # ─── Secondary Compute (Web + App ASGs) ───────────────────────────────────────
 # These ASGs sit in us-west-2 and serve traffic during failover.
 # They are warm standby: running at minimum size, scaling up on failover.
-# Scale them up via the secondary ALB target group on failover.
 
 module "web_asg_secondary" {
   source    = "./modules/compute"
@@ -449,7 +447,7 @@ module "backup_primary" {
     module.aurora.primary_cluster_arn,
     module.dynamodb.table_arn,
   ]
-  tags          = local.common_tags
+  tags = local.common_tags
 }
 
 module "backup_secondary" {
@@ -457,9 +455,7 @@ module "backup_secondary" {
   providers = { aws = aws.secondary }
 
   name_prefix   = "${var.project_name}-${var.environment}-secondary"
-  resource_arns = [
-    module.aurora.secondary_cluster_arn,
-  ]
+  resource_arns = [module.aurora.secondary_cluster_arn]
   tags          = local.common_tags
 }
 
@@ -510,7 +506,7 @@ module "guardduty" {
   tags                 = local.common_tags
 }
 
-# ─── Security Hub ─────────────────────────────────────────────────────────────
+# ─── Security Hub (both regions) ──────────────────────────────────────────────
 # Enabled in BOTH regions so the secondary region's findings are captured.
 
 module "security_hub" {
@@ -533,9 +529,9 @@ module "security_hub_secondary" {
   tags                 = local.common_tags
 }
 
-# ─── AWS Config ───────────────────────────────────────────────────────────────
-# Enabled in BOTH regions: AWS Config is regional and rules only evaluate
-# resources in the region where Config is enabled.
+# ─── AWS Config (both regions) ────────────────────────────────────────────────
+# AWS Config is regional; rules only evaluate resources in the region where
+# Config is enabled. Both regions must have Config to achieve full coverage.
 
 module "config_rules" {
   source    = "./modules/config_rules"
@@ -557,6 +553,28 @@ module "config_rules_secondary" {
   tags           = local.common_tags
 }
 
+# ─── Compliance Config Rules (extended rule set) ──────────────────────────────
+# modules/compliance adds S3/EBS/EC2/RDS/KMS/IAM/ACM/tagging rules on top of
+# the baseline config_rules module. Both regions must have Config enabled first.
+
+module "compliance" {
+  source    = "./modules/compliance"
+  providers = { aws = aws.primary }
+
+  name_prefix        = "${var.project_name}-${var.environment}"
+  config_recorder_id = module.config_rules.recorder_id
+  tags               = local.common_tags
+}
+
+module "compliance_secondary" {
+  source    = "./modules/compliance"
+  providers = { aws = aws.secondary }
+
+  name_prefix        = "${var.project_name}-${var.environment}"
+  config_recorder_id = module.config_rules_secondary.recorder_id
+  tags               = local.common_tags
+}
+
 # ─── Observability (Dashboard + Firehose + Athena + X-Ray) ───────────────────
 # waf_acl_name is intentionally left empty here to break the WAF <-> observability
 # circular dependency. After WAF is deployed, you can pass module.waf.web_acl_id
@@ -573,7 +591,7 @@ module "observability" {
   app_asg_name        = module.app_asg_primary.asg_name
   aurora_cluster_id   = module.aurora.primary_cluster_id
   dynamodb_table_name = module.dynamodb.table_name
-  waf_acl_name        = ""  # set to module.waf.web_acl_id after WAF is deployed
+  waf_acl_name        = "" # set to module.waf.web_acl_id after WAF is deployed
   region              = var.primary_region
   tags                = local.common_tags
 }
@@ -592,9 +610,32 @@ module "observability_secondary" {
   app_asg_name        = module.app_asg_secondary.asg_name
   aurora_cluster_id   = module.aurora.secondary_cluster_id
   dynamodb_table_name = module.dynamodb.table_name
-  waf_acl_name        = ""  # set to module.waf_secondary.web_acl_id after WAF is deployed
+  waf_acl_name        = "" # set to module.waf_secondary.web_acl_id after WAF is deployed
   region              = var.secondary_region
   tags                = local.common_tags
+}
+
+# ─── Platform Alarms (NAT GW, KMS, Secrets Manager, Route53, ACM, Lambda) ────
+# modules/alarms_platform provides alarms that the core alerting module doesn't
+# cover: NAT Gateway saturation/packet-drop, KMS throttles, Secrets Manager
+# throttles, Route53 health-check failures, ACM cert expiry, and rotation Lambda
+# errors. Wire to the primary SNS topic so all ops alerts reach one inbox.
+
+module "alarms_platform" {
+  source    = "./modules/alarms_platform"
+  providers = { aws = aws.primary }
+
+  name_prefix                        = "${var.project_name}-${var.environment}"
+  sns_topic_arn                      = module.alerting.sns_topic_arn
+  nat_gateway_ids                    = module.network_primary.nat_gateway_ids
+  health_check_id                    = var.route53_health_check_id
+  rotation_lambda_name               = var.secrets_rotation_lambda_name
+  nat_connection_threshold           = var.nat_connection_threshold
+  nat_packet_drop_threshold          = var.nat_packet_drop_threshold
+  kms_throttle_threshold             = var.kms_throttle_threshold
+  secretsmanager_throttle_threshold  = var.secretsmanager_throttle_threshold
+  acm_expiry_days_threshold          = var.acm_expiry_days_threshold
+  tags                               = local.common_tags
 }
 
 # ─── Alerting (SNS + CloudWatch Alarms + ASG Notifications) ──────────────────
@@ -639,16 +680,14 @@ module "waf_secondary" {
   name_prefix = "${var.project_name}-${var.environment}-secondary"
   alb_arn     = module.alb_secondary.external_alb_arn
   nlb_arn     = module.nlb_secondary.nlb_arn
-  # Fixed: was incorrectly using primary region Firehose ARN.
-  # Kinesis Firehose is region-scoped — WAF can only deliver logs to a Firehose
-  # in the same region. Now correctly points to the secondary region Firehose.
+  # Fixed: Kinesis Firehose is region-scoped — WAF can only deliver logs to a
+  # Firehose in the same region. Points to secondary region Firehose.
   waf_log_destination_arn = module.observability_secondary.firehose_arn
   tags                    = local.common_tags
 }
 
 # ─── CloudFront CDN + S3 Static Assets ───────────────────────────────────────
 # cloudfront_acm_certificate_arn MUST be pre-created in us-east-1.
-# See variables.tf for bootstrap instructions.
 
 module "cdn" {
   source = "./modules/cdn"

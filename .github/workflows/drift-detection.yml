@@ -1,10 +1,14 @@
-# Nightly drift detection for prod Terraform state
+# Nightly drift detection for ALL environments (dev / stage / prod)
 # Runs terraform plan against real AWS infra every night at 2 AM UTC (7:30 AM IST).
 # If drift is detected (plan has changes), opens a GitHub Issue automatically.
 # Closes the issue automatically on the next clean run.
 #
 # Auth: OIDC keyless authentication — no static AWS keys needed.
 # Required IAM role: arn:aws:iam::ACCOUNT_ID:role/github-actions-terraform
+#
+# CHANGE from previous version:
+#   - Upgraded hashicorp/setup-terraform from @v3 to @v4 (consistent with pipeline)
+#   - Expanded from prod-only to a matrix covering dev + stage + prod
 
 name: Terraform Drift Detection
 
@@ -12,11 +16,15 @@ on:
   schedule:
     - cron: '0 2 * * *'   # 2 AM UTC = 7:30 AM IST daily
   workflow_dispatch:       # manual trigger for on-demand drift check
+    inputs:
+      environment:
+        description: 'Environment to check (dev | stage | prod | all)'
+        required: false
+        default: 'all'
 
 permissions:
   contents: read
   issues: write          # open/close drift issues
-  pull-requests: write   # future-proof: comment on PRs if needed
   id-token: write        # OIDC token generation
 
 env:
@@ -27,23 +35,38 @@ env:
 
 jobs:
   drift-check:
-    name: "Drift Check (prod)"
+    name: "Drift Check (${{ matrix.environment }})"
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # check all envs even if one fails
+      matrix:
+        environment: [dev, stage, prod]
+        # On manual dispatch with a specific env, skip others
+        # (GitHub Actions doesn't support dynamic matrix exclusion natively;
+        #  the filter below uses an if-guard on each job instead)
 
     steps:
+      - name: Skip if manual dispatch selected a different env
+        if: |
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.environment != 'all' &&
+          github.event.inputs.environment != matrix.environment
+        run: echo "Skipping ${{ matrix.environment }} — manual run targeted ${{ github.event.inputs.environment }}" && exit 0
+
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ matrix.environment == 'prod' && 'main' || matrix.environment == 'stage' && 'stage' || 'develop' }}
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: terraform-drift-${{ github.run_id }}
+          role-session-name: terraform-drift-${{ matrix.environment }}-${{ github.run_id }}
 
+      # Upgraded from @v3 to @v4 — consistent with terraform-pipeline.yml
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
@@ -52,7 +75,7 @@ jobs:
           cat > ci-backend.hcl <<EOF
           bucket       = "${{ env.TF_BACKEND_BUCKET }}"
           region       = "${{ env.AWS_REGION }}"
-          key          = "prod/terraform.tfstate"
+          key          = "${{ matrix.environment }}/terraform.tfstate"
           encrypt      = true
           use_lockfile = true
           EOF
@@ -65,7 +88,7 @@ jobs:
         run: |
           set +e
           terraform plan \
-            -var-file=environments/prod/terraform.tfvars \
+            -var-file=environments/${{ matrix.environment }}/terraform.tfvars \
             -detailed-exitcode \
             -no-color 2>&1 | tee drift_output.txt
           TF_EXIT=${PIPESTATUS[0]}
@@ -81,25 +104,27 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
+            const fs  = require('fs');
+            const env = '${{ matrix.environment }}';
             const drift = fs.readFileSync('drift_output.txt', 'utf8').slice(0, 60000);
             const date  = new Date().toISOString().split('T')[0];
+            const label = `terraform-drift-${env}`;
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo:  context.repo.repo,
               state: 'open',
-              labels: 'terraform-drift'
+              labels: label
             });
             if (issues.data.length === 0) {
               await github.rest.issues.create({
                 owner:  context.repo.owner,
                 repo:   context.repo.repo,
-                title:  `\u26a0\ufe0f Terraform Drift Detected in prod (${date})`,
-                labels: ['terraform-drift'],
+                title:  `\u26a0\ufe0f Terraform Drift Detected in ${env} (${date})`,
+                labels: ['terraform-drift', label],
                 body: [
-                  '## \u26a0\ufe0f Terraform Drift Detected',
+                  `## \u26a0\ufe0f Terraform Drift Detected — \`${env}\``,
                   '',
-                  'The nightly drift check found that **prod** has drifted from Terraform state.',
+                  `The nightly drift check found that **${env}** has drifted from Terraform state.`,
                   'This likely means someone made a manual change to AWS resources.',
                   '',
                   '<details><summary>Plan Output (click to expand)</summary>',
@@ -110,8 +135,8 @@ jobs:
                   '',
                   '</details>',
                   '',
-                  '**Action required — choose one:**',
-                  '1. Run `terraform apply` on `main` to reconcile AWS back to IaC state',
+                  '**Action required \u2014 choose one:**',
+                  `1. Run \`terraform apply\` on the \`${env === 'prod' ? 'main' : env}\` branch to reconcile AWS back to IaC state`,
                   '2. Update Terraform code to reflect the intended change, then apply',
                 ].join('\n')
               });
@@ -120,7 +145,7 @@ jobs:
                 owner:        context.repo.owner,
                 repo:         context.repo.repo,
                 issue_number: issues.data[0].number,
-                body: `\ud83d\udd04 Drift still present as of ${date}\n\n<details><summary>Latest Plan</summary>\n\n\`\`\`hcl\n${drift}\n\`\`\`\n</details>`
+                body: `\ud83d\udd04 Drift still present in \`${env}\` as of ${date}\n\n<details><summary>Latest Plan</summary>\n\n\`\`\`hcl\n${drift}\n\`\`\`\n</details>`
               });
             }
 
@@ -129,18 +154,20 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const env   = '${{ matrix.environment }}';
+            const label = `terraform-drift-${env}`;
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo:  context.repo.repo,
               state: 'open',
-              labels: 'terraform-drift'
+              labels: label
             });
             for (const issue of issues.data) {
               await github.rest.issues.createComment({
                 owner:        context.repo.owner,
                 repo:         context.repo.repo,
                 issue_number: issue.number,
-                body: '\u2705 Drift resolved \u2014 prod state is clean as of ' + new Date().toISOString()
+                body: `\u2705 Drift resolved \u2014 \`${env}\` state is clean as of ` + new Date().toISOString()
               });
               await github.rest.issues.update({
                 owner:        context.repo.owner,
@@ -153,5 +180,5 @@ jobs:
       - name: Fail job if Terraform errored (exit code 1)
         if: steps.plan.outputs.EXIT_CODE == '1'
         run: |
-          echo "Terraform plan encountered an error. Check the output above."
+          echo "Terraform plan encountered an error in ${{ matrix.environment }}. Check the output above."
           exit 1

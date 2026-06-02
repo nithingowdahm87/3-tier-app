@@ -37,6 +37,18 @@ variable "aws_account_id" {
   }
 }
 
+variable "owner_tag" {
+  description = "Owner tag value applied to all resources (e.g. team name or email). Required by compliance module."
+  type        = string
+  default     = "platform-team"
+}
+
+variable "cost_center_tag" {
+  description = "CostCenter tag value applied to all resources. Required by compliance module REQUIRED_TAGS Config rule."
+  type        = string
+  default     = "engineering"
+}
+
 variable "primary_vpc_cidr" {
   description = "CIDR block for the primary VPC"
   type        = string
@@ -71,8 +83,6 @@ variable "az_count" {
 }
 
 # --- Bastion (legacy - prefer SSM Session Manager for zero-attack-surface access) ---
-# To use SSM instead: set bastion_enabled = false and ensure VPC endpoints for
-# ssm, ssmmessages, ec2messages are deployed (already in modules/vpc_endpoints).
 variable "bastion_enabled" {
   description = "Set to false to disable bastion and use SSM Session Manager instead (recommended for prod)"
   type        = bool
@@ -82,7 +92,7 @@ variable "bastion_enabled" {
 variable "bastion_allowed_cidr" {
   description = "CIDR allowed to SSH to bastion. MUST be set explicitly - never use 0.0.0.0/0. Ignored when bastion_enabled = false."
   type        = string
-  default     = "10.0.0.0/32" # safe dummy; only used when bastion_enabled = true
+  default     = "10.0.0.0/32"
 
   validation {
     condition     = var.bastion_allowed_cidr != "0.0.0.0/0"
@@ -96,7 +106,6 @@ variable "bastion_instance_type" {
   default     = "t3.micro"
 }
 
-# DNS
 variable "domain_name" {
   description = "Primary domain name (e.g. app.example.com). Must exist in the Route53 hosted zone."
   type        = string
@@ -112,14 +121,6 @@ variable "hosted_zone_id" {
   type        = string
 }
 
-# CloudFront ACM certificate (must be in us-east-1)
-# IMPORTANT: This cert MUST be created before the main apply.
-# Bootstrap steps (one-time):
-#   1. aws acm request-certificate --domain-name "static.YOUR_DOMAIN" \
-#        --subject-alternative-names "YOUR_DOMAIN" "www.YOUR_DOMAIN" \
-#        --validation-method DNS --region us-east-1
-#   2. Complete DNS validation in Route53
-#   3. Set the resulting ARN in terraform.tfvars as cloudfront_acm_certificate_arn
 variable "cloudfront_acm_certificate_arn" {
   description = "ACM certificate ARN in us-east-1 for CloudFront. Must be created and validated before apply."
   type        = string
@@ -213,17 +214,10 @@ variable "db_username" {
 }
 
 # ElastiCache Redis
-# IMPORTANT: redis_auth_token is fetched from Secrets Manager at plan time.
-# Seed the secret before first apply:
-#   aws secretsmanager put-secret-value \
-#     --secret-id /<environment>/redis/auth_token \
-#     --secret-string '{"token": "<openssl rand -base64 32 output>"}'
-# The secret is read via data source in main.tf - do NOT set this in tfvars.
 variable "redis_node_type" {
   description = "ElastiCache node type"
   type        = string
   default     = "cache.r7g.large"
-  # r7g.large for prod (memory-optimised); t4g.small acceptable for dev only
 }
 
 variable "redis_num_nodes" {
@@ -244,7 +238,7 @@ variable "alert_email" {
 
   validation {
     condition     = can(regex("^[^@]+@[^@]+\\.[^@]+$", var.alert_email))
-    error_message = "alert_email must be a valid email address. Do not leave this empty in production."
+    error_message = "alert_email must be a valid email address."
   }
 }
 
@@ -260,7 +254,7 @@ variable "aurora_max_connections_threshold" {
   default     = 800
 }
 
-# S3 Bucket names (must be globally unique)
+# S3 Bucket names
 variable "cloudtrail_bucket_name" {
   description = "Globally unique S3 bucket name for CloudTrail logs"
   type        = string
@@ -279,4 +273,48 @@ variable "logs_bucket_name" {
 variable "static_assets_bucket_name" {
   description = "Globally unique S3 bucket name for CloudFront static assets"
   type        = string
+}
+
+# ─── alarms_platform module inputs ───────────────────────────────────────────
+
+variable "route53_health_check_id" {
+  description = "Route53 health check ID to monitor. Leave empty to skip the health-check alarm."
+  type        = string
+  default     = ""
+}
+
+variable "secrets_rotation_lambda_name" {
+  description = "Name of the Secrets Manager rotation Lambda function. Leave empty to skip the rotation-error alarm."
+  type        = string
+  default     = ""
+}
+
+variable "nat_connection_threshold" {
+  description = "NAT Gateway active connection count alarm threshold"
+  type        = number
+  default     = 50000
+}
+
+variable "nat_packet_drop_threshold" {
+  description = "NAT Gateway packet drop count alarm threshold (5-minute sum)"
+  type        = number
+  default     = 100
+}
+
+variable "kms_throttle_threshold" {
+  description = "KMS throttled requests alarm threshold (5-minute sum)"
+  type        = number
+  default     = 5
+}
+
+variable "secretsmanager_throttle_threshold" {
+  description = "Secrets Manager throttled requests alarm threshold (5-minute sum)"
+  type        = number
+  default     = 5
+}
+
+variable "acm_expiry_days_threshold" {
+  description = "ACM certificate days-to-expiry alarm threshold (alarm fires when cert expires in fewer than N days)"
+  type        = number
+  default     = 30
 }
