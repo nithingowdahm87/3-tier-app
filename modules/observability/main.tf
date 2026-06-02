@@ -19,7 +19,7 @@ resource "aws_xray_sampling_rule" "default" {
   version        = 1
 }
 
-# Kinesis Firehose → S3 for centralised log aggregation
+# Kinesis Firehose -> S3 for centralised log aggregation
 resource "aws_s3_bucket" "logs" {
   bucket        = var.logs_bucket_name
   force_destroy = false
@@ -66,13 +66,13 @@ resource "aws_kinesis_firehose_delivery_stream" "logs" {
   destination = "extended_s3"
 
   extended_s3_configuration {
-    role_arn           = aws_iam_role.firehose.arn
-    bucket_arn         = aws_s3_bucket.logs.arn
-    prefix             = "logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+    role_arn            = aws_iam_role.firehose.arn
+    bucket_arn          = aws_s3_bucket.logs.arn
+    prefix              = "logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
     error_output_prefix = "errors/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/!{firehose:error-output-type}/"
-    buffering_size     = 64
-    buffering_interval = 300
-    compression_format = "GZIP"
+    buffering_size      = 64
+    buffering_interval  = 300
+    compression_format  = "GZIP"
   }
 
   tags = var.tags
@@ -94,84 +94,91 @@ resource "aws_athena_workgroup" "logs" {
   tags = var.tags
 }
 
-# CloudWatch Dashboard
+# ---- CloudWatch Dashboard -------------------------------------------------
+# Core widgets are always created.
+# The WAF Blocked Requests widget is optional: it is included only when
+# var.waf_acl_name is non-empty, which breaks the circular dependency that
+# previously existed between this module and modules/waf.
+
+locals {
+  core_widgets = [
+    {
+      type = "metric"
+      properties = {
+        title   = "ALB 5xx Errors"
+        period  = 300
+        stat    = "Sum"
+        metrics = [["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", var.alb_arn_suffix]]
+      }
+    },
+    {
+      type = "metric"
+      properties = {
+        title   = "ALB p99 Latency (s)"
+        period  = 300
+        stat    = "p99"
+        metrics = [["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.alb_arn_suffix]]
+      }
+    },
+    {
+      type = "metric"
+      properties = {
+        title   = "Web ASG CPU"
+        period  = 300
+        stat    = "Average"
+        metrics = [["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.web_asg_name]]
+      }
+    },
+    {
+      type = "metric"
+      properties = {
+        title   = "App ASG CPU"
+        period  = 300
+        stat    = "Average"
+        metrics = [["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.app_asg_name]]
+      }
+    },
+    {
+      type = "metric"
+      properties = {
+        title   = "Aurora DB Connections"
+        period  = 300
+        stat    = "Average"
+        metrics = [["AWS/RDS", "DatabaseConnections", "DBClusterIdentifier", var.aurora_cluster_id]]
+      }
+    },
+    {
+      type = "metric"
+      properties = {
+        title   = "Aurora Replica Lag (ms)"
+        period  = 60
+        stat    = "Maximum"
+        metrics = [["AWS/RDS", "AuroraGlobalDBReplicationLag"]]
+      }
+    },
+    {
+      type = "metric"
+      properties = {
+        title   = "DynamoDB Throttled Requests"
+        period  = 300
+        stat    = "Sum"
+        metrics = [["AWS/DynamoDB", "ThrottledRequests", "TableName", var.dynamodb_table_name]]
+      }
+    },
+  ]
+
+  waf_widget = var.waf_acl_name != "" ? [{
+    type = "metric"
+    properties = {
+      title   = "WAF Blocked Requests"
+      period  = 300
+      stat    = "Sum"
+      metrics = [["AWS/WAFV2", "BlockedRequests", "WebACL", var.waf_acl_name, "Region", var.region, "Rule", "ALL"]]
+    }
+  }] : []
+}
+
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.name_prefix}-operations"
-
-  dashboard_body = jsonencode({
-    widgets = [
-      {
-        type = "metric"
-        properties = {
-          title  = "ALB 5xx Errors"
-          period = 300
-          stat   = "Sum"
-          metrics = [["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", var.alb_arn_suffix]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "ALB p99 Latency (s)"
-          period = 300
-          stat   = "p99"
-          metrics = [["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.alb_arn_suffix]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "Web ASG CPU"
-          period = 300
-          stat   = "Average"
-          metrics = [["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.web_asg_name]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "App ASG CPU"
-          period = 300
-          stat   = "Average"
-          metrics = [["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.app_asg_name]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "Aurora DB Connections"
-          period = 300
-          stat   = "Average"
-          metrics = [["AWS/RDS", "DatabaseConnections", "DBClusterIdentifier", var.aurora_cluster_id]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "Aurora Replica Lag (ms)"
-          period = 60
-          stat   = "Maximum"
-          metrics = [["AWS/RDS", "AuroraGlobalDBReplicationLag"]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "DynamoDB Throttled Requests"
-          period = 300
-          stat   = "Sum"
-          metrics = [["AWS/DynamoDB", "ThrottledRequests", "TableName", var.dynamodb_table_name]]
-        }
-      },
-      {
-        type = "metric"
-        properties = {
-          title  = "WAF Blocked Requests"
-          period = 300
-          stat   = "Sum"
-          metrics = [["AWS/WAFV2", "BlockedRequests", "WebACL", var.waf_acl_name, "Region", var.region, "Rule", "ALL"]]
-        }
-      }
-    ]
-  })
+  dashboard_body = jsonencode({ widgets = concat(local.core_widgets, local.waf_widget) })
 }

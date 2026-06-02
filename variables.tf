@@ -60,7 +60,7 @@ variable "secondary_vpc_cidr" {
 }
 
 variable "az_count" {
-  description = "Number of availability zones to use (min 3 for MAANG-grade HA)"
+  description = "Number of availability zones to use (min 3 for production-grade HA)"
   type        = number
   default     = 3
 
@@ -70,7 +70,7 @@ variable "az_count" {
   }
 }
 
-# ─── Bastion (legacy — prefer SSM Session Manager for zero-attack-surface access) ───
+# --- Bastion (legacy - prefer SSM Session Manager for zero-attack-surface access) ---
 # To use SSM instead: set bastion_enabled = false and ensure VPC endpoints for
 # ssm, ssmmessages, ec2messages are deployed (already in modules/vpc_endpoints).
 variable "bastion_enabled" {
@@ -80,7 +80,7 @@ variable "bastion_enabled" {
 }
 
 variable "bastion_allowed_cidr" {
-  description = "CIDR allowed to SSH to bastion. MUST be set explicitly — never use 0.0.0.0/0. Ignored when bastion_enabled = false."
+  description = "CIDR allowed to SSH to bastion. MUST be set explicitly - never use 0.0.0.0/0. Ignored when bastion_enabled = false."
   type        = string
   default     = "10.0.0.0/32" # safe dummy; only used when bastion_enabled = true
 
@@ -211,11 +211,6 @@ variable "db_username" {
   default     = "admin"
   description = "Aurora master username"
 }
-variable "db_secret_name" {
-  description = "Secrets Manager secret name for Aurora password — auto-derived from environment"
-  type        = string
-  default     = ""
-}
 
 # ElastiCache Redis
 # IMPORTANT: redis_auth_token is fetched from Secrets Manager at plan time.
@@ -223,7 +218,7 @@ variable "db_secret_name" {
 #   aws secretsmanager put-secret-value \
 #     --secret-id /<environment>/redis/auth_token \
 #     --secret-string '{"token": "<openssl rand -base64 32 output>"}'
-# The secret is read via data source in main.tf — do NOT set this in tfvars.
+# The secret is read via data source in main.tf - do NOT set this in tfvars.
 variable "redis_node_type" {
   description = "ElastiCache node type"
   type        = string
