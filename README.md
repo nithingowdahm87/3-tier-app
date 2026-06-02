@@ -22,8 +22,6 @@ This repository provisions:
 
 ![Architecture](docs/architecture.png)
 
-> **Upload the architecture diagram:** Save the image you provided as `docs/architecture.png` in this repo.
-
 ---
 
 ## Quick Start
