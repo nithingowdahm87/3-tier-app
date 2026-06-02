@@ -488,6 +488,9 @@ module "config_rules" {
 }
 
 # ─── Observability (Dashboard + Firehose + Athena + X-Ray) ───────────────────
+# waf_acl_name is intentionally left empty here to break the WAF <-> observability
+# circular dependency. After WAF is deployed, you can pass module.waf.web_acl_id
+# to add the WAF Blocked Requests widget to the dashboard.
 
 module "observability" {
   source    = "./modules/observability"
@@ -500,7 +503,7 @@ module "observability" {
   app_asg_name        = module.app_asg_primary.asg_name
   aurora_cluster_id   = module.aurora.primary_cluster_id
   dynamodb_table_name = module.dynamodb.table_name
-  waf_acl_name        = module.waf.web_acl_id
+  waf_acl_name        = ""  # set to module.waf.web_acl_id after WAF is deployed
   region              = var.primary_region
   tags                = local.common_tags
 }
@@ -576,13 +579,13 @@ module "globalaccelerator" {
   source    = "./modules/globalaccelerator"
   providers = { aws = aws.primary }
 
-  name_prefix      = "${var.project_name}-${var.environment}"
-  primary_region   = var.primary_region
-  secondary_region = var.secondary_region
-  primary_nlb_arn  = module.nlb_primary.nlb_arn
+  name_prefix       = "${var.project_name}-${var.environment}"
+  primary_region    = var.primary_region
+  secondary_region  = var.secondary_region
+  primary_nlb_arn   = module.nlb_primary.nlb_arn
   secondary_nlb_arn = module.nlb_secondary.nlb_arn
-  logs_bucket_name = module.observability.logs_bucket_name
-  tags             = local.common_tags
+  logs_bucket_name  = module.observability.logs_bucket_name
+  tags              = local.common_tags
 }
 
 # ─── FIS Chaos Engineering ────────────────────────────────────────────────────

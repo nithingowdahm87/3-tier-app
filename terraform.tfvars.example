@@ -11,7 +11,7 @@ aws_account_id = "123456789012"
 primary_vpc_cidr   = "10.0.0.0/16"
 secondary_vpc_cidr = "10.1.0.0/16"
 
-# Use 3 AZs for MAANG-grade HA
+# Use 3 AZs for production-grade high availability
 az_count = 3
 
 # SSM Session Manager is recommended (bastion_enabled = false).
