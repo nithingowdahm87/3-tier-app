@@ -1,0 +1,25 @@
+# CODEOWNERS — require @nithingowdahm87 review on all core infra surfaces.
+# GitHub will automatically request your review on any PR touching these paths.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Root Terraform entrypoints
+/main.tf           @nithingowdahm87
+/variables.tf      @nithingowdahm87
+/versions.tf       @nithingowdahm87
+/providers.tf      @nithingowdahm87
+/outputs.tf        @nithingowdahm87
+
+# All reusable modules
+/modules/          @nithingowdahm87
+
+# Environment-specific config (tfvars, backend configs)
+/environments/     @nithingowdahm87
+
+# Bootstrap state infra
+/bootstrap-state/  @nithingowdahm87
+
+# CI/CD workflows and CODEOWNERS itself
+/.github/          @nithingowdahm87
+
+# Org SCPs
+/org/              @nithingowdahm87
