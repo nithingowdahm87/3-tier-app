@@ -20,7 +20,9 @@ This repository provisions:
 
 ## Architecture Diagram
 
-![Architecture](docs/architecture.png)
+<p align="center">
+  <img src="docs/Untitled%20design.png" alt="3-Tier AWS Architecture" width="100%" />
+</p>
 
 ---
 
@@ -88,7 +90,7 @@ terraform apply
 │   ├── security_hub/        # Security posture
 │   └── ... (31 modules total)
 ├── docs/
-│   ├── architecture.png     # Diagram
+│   ├── Untitled design.png  # Architecture diagram
 │   ├── oidc-setup.md        # OIDC guide
 │   └── bootstrap.md         # State setup
 ├── main.tf
