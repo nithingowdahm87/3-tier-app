@@ -83,8 +83,10 @@ jobs:
         with:
           soft_fail: false
 
+      # Pinned to a specific release tag to prevent silent breakage from upstream changes.
+      # Update the tag intentionally when you want to upgrade (do not use @master).
       - name: Run Trivy IaC scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.32.1
         with:
           scan-type: config
           scan-ref: .
@@ -197,8 +199,9 @@ jobs:
               body
             });
 
+      # Guard catches failure AND cancelled/timed-out outcomes — not just 'failure'
       - name: Fail if plan failed
-        if: steps.plan.outcome == 'failure'
+        if: steps.plan.outcome != 'success'
         run: exit 1
 
   # -- 5. APPLY - stage (auto) ---------------------------------------
