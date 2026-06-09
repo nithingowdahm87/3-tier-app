@@ -1,12 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source                = "hashicorp/aws"
-      configuration_aliases = [aws.primary, aws.secondary]
-    }
-  }
-}
-
 variable "name_prefix" { type = string }
 variable "primary_db_subnet_ids" { type = list(string) }
 variable "secondary_db_subnet_ids" { type = list(string) }
