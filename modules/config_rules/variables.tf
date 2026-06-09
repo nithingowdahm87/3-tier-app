@@ -1,4 +1,18 @@
-variable "name_prefix"    { type = string }
-variable "bucket_name"    { type = string }
-variable "aws_account_id" { type = string }
-variable "tags"           { type = map(string); default = {} }
+variable "name_prefix" {
+  type = string
+}
+
+variable "bucket_name" {
+  type        = string
+  description = "Globally unique S3 bucket name for AWS Config snapshots"
+}
+
+variable "aws_account_id" {
+  type        = string
+  description = "AWS account ID for S3 bucket policy conditions"
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
+}

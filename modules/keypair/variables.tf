@@ -1,11 +1,12 @@
 variable "key_name" {
-  type        = string
-  description = "Name of the EC2 key pair to create"
+  type = string
 }
 
 variable "environment" {
-  type        = string
-  description = "Environment name used in the Secrets Manager path"
+  type = string
 }
 
-variable "tags" { type = map(string); default = {} }
+variable "tags" {
+  type    = map(string)
+  default = {}
+}

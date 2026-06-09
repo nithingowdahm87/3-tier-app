@@ -1,5 +1,19 @@
-variable "table_name" { type = string }
-variable "hash_key" { type = string default = "id" }
-variable "range_key" { type = string default = null }
-variable "replica_region" { type = string }
-variable "tags" { type = map(string) default = {} }
+variable "name_prefix" {
+  type = string
+}
+
+variable "hash_key" {
+  type    = string
+  default = "id"
+}
+
+variable "replica_regions" {
+  type        = list(string)
+  default     = []
+  description = "Additional regions to replicate the DynamoDB table to"
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
+}

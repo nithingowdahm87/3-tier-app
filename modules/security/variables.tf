@@ -1,11 +1,22 @@
-variable "name_prefix" { type = string }
-variable "vpc_id" { type = string }
-variable "vpc_cidr" {
-  type        = string
-  description = "VPC CIDR block — used to scope Aurora SG egress to VPC only"
+variable "name_prefix" {
+  type = string
 }
+
+variable "vpc_id" {
+  type = string
+}
+
+variable "vpc_cidr" {
+  type = string
+}
+
 variable "bastion_allowed_cidr" {
   type        = string
-  description = "CIDR block allowed to SSH to the bastion. Must be explicitly set - no default to prevent accidental 0.0.0.0/0."
+  default     = "10.0.0.0/8"
+  description = "CIDR block allowed to SSH to the bastion host"
 }
-variable "tags" { type = map(string); default = {} }
+
+variable "tags" {
+  type    = map(string)
+  default = {}
+}

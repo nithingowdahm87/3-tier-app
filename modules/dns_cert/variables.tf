@@ -1,14 +1,18 @@
-variable "domain_name"               { type = string }
-variable "subject_alternative_names" { type = list(string); default = [] }
-variable "hosted_zone_id"            { type = string }
-variable "nlb_dns_name"              { type = string }
-variable "nlb_zone_id"               { type = string }
-variable "secondary_nlb_dns_name" {
-  type        = string
-  description = "DNS name of the secondary region NLB for failover routing"
+variable "domain_name" {
+  type = string
 }
-variable "secondary_nlb_zone_id" {
-  type        = string
-  description = "Zone ID of the secondary region NLB for failover routing"
+
+variable "subject_alternative_names" {
+  type    = list(string)
+  default = []
 }
-variable "tags" { type = map(string); default = {} }
+
+variable "zone_id" {
+  type        = string
+  description = "Route53 hosted zone ID for DNS validation"
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
+}
