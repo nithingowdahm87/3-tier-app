@@ -1,3 +1,9 @@
-output "distribution_id"      { value = aws_cloudfront_distribution.static.id }
-output "distribution_domain"  { value = aws_cloudfront_distribution.static.domain_name }
-output "static_bucket_name"   { value = aws_s3_bucket.static.bucket }
+output "distribution_id" {
+  description = "CloudFront distribution ID"
+  value       = aws_cloudfront_distribution.this.id
+}
+
+output "distribution_domain" {
+  description = "CloudFront distribution domain name"
+  value       = aws_cloudfront_distribution.this.domain_name
+}

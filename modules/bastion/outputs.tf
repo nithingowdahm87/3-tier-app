@@ -1,4 +1,9 @@
-output "bastion_asg_name" {
-  description = "Name of the bastion Auto Scaling Group"
-  value       = aws_autoscaling_group.bastion.name
+output "bastion_instance_id" {
+  description = "ID of the bastion EC2 instance"
+  value       = aws_instance.bastion.id
+}
+
+output "bastion_public_ip" {
+  description = "Public IP of the bastion EC2 instance"
+  value       = aws_instance.bastion.public_ip
 }

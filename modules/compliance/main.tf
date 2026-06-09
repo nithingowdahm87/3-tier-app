@@ -4,7 +4,9 @@ terraform {
   }
 }
 
-# ─── Additional Config Managed Rules ─────────────────────────────────────────
+# NOTE: depends_on only accepts resource/module references, not variables.
+# The config_recorder_id variable is accepted for documentation purposes.
+# Sequencing is handled by Terraform's implicit dependency graph.
 
 resource "aws_config_config_rule" "s3_server_side_encryption" {
   name        = "${var.name_prefix}-s3-server-side-encryption-enabled"
@@ -14,8 +16,6 @@ resource "aws_config_config_rule" "s3_server_side_encryption" {
     owner             = "AWS"
     source_identifier = "S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "s3_ssl_only" {
@@ -26,8 +26,6 @@ resource "aws_config_config_rule" "s3_ssl_only" {
     owner             = "AWS"
     source_identifier = "S3_BUCKET_SSL_REQUESTS_ONLY"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "s3_versioning" {
@@ -38,8 +36,6 @@ resource "aws_config_config_rule" "s3_versioning" {
     owner             = "AWS"
     source_identifier = "S3_BUCKET_VERSIONING_ENABLED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "ebs_encrypted" {
@@ -50,8 +46,6 @@ resource "aws_config_config_rule" "ebs_encrypted" {
     owner             = "AWS"
     source_identifier = "EC2_EBS_ENCRYPTION_BY_DEFAULT"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "ec2_no_public_ip" {
@@ -62,8 +56,6 @@ resource "aws_config_config_rule" "ec2_no_public_ip" {
     owner             = "AWS"
     source_identifier = "EC2_INSTANCE_NO_PUBLIC_IP"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "rds_storage_encrypted" {
@@ -74,8 +66,6 @@ resource "aws_config_config_rule" "rds_storage_encrypted" {
     owner             = "AWS"
     source_identifier = "RDS_STORAGE_ENCRYPTED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "rds_deletion_protection" {
@@ -86,8 +76,6 @@ resource "aws_config_config_rule" "rds_deletion_protection" {
     owner             = "AWS"
     source_identifier = "RDS_INSTANCE_DELETION_PROTECTION_ENABLED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "required_tags" {
@@ -100,11 +88,11 @@ resource "aws_config_config_rule" "required_tags" {
   }
 
   input_parameters = jsonencode({
-    tag1Key   = "Environment"
-    tag2Key   = "Project"
-    tag3Key   = "ManagedBy"
-    tag4Key   = "Owner"
-    tag5Key   = "CostCenter"
+    tag1Key = "Environment"
+    tag2Key = "Project"
+    tag3Key = "ManagedBy"
+    tag4Key = "Owner"
+    tag5Key = "CostCenter"
   })
 
   scope {
@@ -117,8 +105,6 @@ resource "aws_config_config_rule" "required_tags" {
       "AWS::ElasticLoadBalancingV2::LoadBalancer",
     ]
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "nacl_no_unrestricted_ssh" {
@@ -129,8 +115,6 @@ resource "aws_config_config_rule" "nacl_no_unrestricted_ssh" {
     owner             = "AWS"
     source_identifier = "NACL_NO_UNRESTRICTED_SSH_RDP"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "alb_waf_enabled" {
@@ -141,8 +125,6 @@ resource "aws_config_config_rule" "alb_waf_enabled" {
     owner             = "AWS"
     source_identifier = "ALB_WAF_ENABLED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "cloudtrail_encryption" {
@@ -153,8 +135,6 @@ resource "aws_config_config_rule" "cloudtrail_encryption" {
     owner             = "AWS"
     source_identifier = "CLOUD_TRAIL_ENCRYPTION_ENABLED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "kms_key_rotation" {
@@ -165,8 +145,6 @@ resource "aws_config_config_rule" "kms_key_rotation" {
     owner             = "AWS"
     source_identifier = "CMK_BACKING_KEY_ROTATION_ENABLED"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "iam_no_inline_policy" {
@@ -177,8 +155,6 @@ resource "aws_config_config_rule" "iam_no_inline_policy" {
     owner             = "AWS"
     source_identifier = "IAM_NO_INLINE_POLICY_CHECK"
   }
-
-  depends_on = [var.config_recorder_id]
 }
 
 resource "aws_config_config_rule" "iam_user_no_policies" {
@@ -189,6 +165,4 @@ resource "aws_config_config_rule" "iam_user_no_policies" {
     owner             = "AWS"
     source_identifier = "IAM_USER_NO_POLICIES_CHECK"
   }
-
-  depends_on = [var.config_recorder_id]
 }

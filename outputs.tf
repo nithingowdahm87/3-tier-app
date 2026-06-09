@@ -1,4 +1,4 @@
-# ─── Primary Region ──────────────────────────────────────────────────────────
+# --- Primary Region ----------------------------------------------------------
 
 output "primary_vpc_id" {
   description = "Primary VPC ID"
@@ -50,12 +50,17 @@ output "secondary_alb_dns" {
   value       = module.alb_secondary.external_alb_dns
 }
 
-# ─── Bastion (conditional — only populated when bastion_enabled = true) ───────
+# --- Bastion (conditional — only populated when bastion_enabled = true) -------
 # try() prevents a plan error when bastion_enabled = false (module count = 0).
 
-output "bastion_asg_name" {
-  description = "Bastion ASG name (empty when bastion_enabled = false). Find instance: aws ec2 describe-instances --filters Name=tag:aws:autoscaling:groupName,Values=<name>"
-  value       = try(module.bastion_primary[0].bastion_asg_name, "bastion-disabled")
+output "bastion_instance_id" {
+  description = "Bastion EC2 instance ID (empty when bastion_enabled = false)"
+  value       = try(module.bastion_primary[0].bastion_instance_id, "bastion-disabled")
+}
+
+output "bastion_public_ip" {
+  description = "Bastion public IP (empty when bastion_enabled = false)"
+  value       = try(module.bastion_primary[0].bastion_public_ip, "bastion-disabled")
 }
 
 output "bastion_ssh_key_secret" {
@@ -63,7 +68,7 @@ output "bastion_ssh_key_secret" {
   value       = module.keypair.private_key_secret_name
 }
 
-# ─── Logging ─────────────────────────────────────────────────────────────────
+# --- Logging -----------------------------------------------------------------
 
 output "alb_logs_bucket" {
   description = "S3 bucket name for ALB access logs — primary region"
@@ -75,7 +80,7 @@ output "alb_logs_bucket_secondary" {
   value       = module.logging_secondary.bucket_name
 }
 
-# ─── Secrets ─────────────────────────────────────────────────────────────────
+# --- Secrets -----------------------------------------------------------------
 
 output "aurora_password_secret" {
   description = "Secrets Manager secret name for Aurora master password"
@@ -87,7 +92,7 @@ output "redis_auth_secret" {
   value       = module.redis_secret.secret_name
 }
 
-# ─── Aurora Global ────────────────────────────────────────────────────────────
+# --- Aurora Global -----------------------------------------------------------
 
 output "aurora_primary_endpoint" {
   description = "Aurora primary cluster write endpoint"
@@ -107,7 +112,7 @@ output "aurora_secondary_endpoint" {
   sensitive   = true
 }
 
-# ─── ElastiCache Redis ────────────────────────────────────────────────────────
+# --- ElastiCache Redis -------------------------------------------------------
 
 output "redis_primary_endpoint" {
   description = "ElastiCache Redis primary endpoint"
@@ -121,7 +126,7 @@ output "redis_reader_endpoint" {
   sensitive   = true
 }
 
-# ─── CloudTrail ───────────────────────────────────────────────────────────────
+# --- CloudTrail --------------------------------------------------------------
 
 output "cloudtrail_bucket" {
   description = "S3 bucket for CloudTrail logs"
@@ -133,7 +138,7 @@ output "cloudtrail_log_group" {
   value       = module.cloudtrail.log_group_name
 }
 
-# ─── Observability ────────────────────────────────────────────────────────────
+# --- Observability -----------------------------------------------------------
 
 output "observability_dashboard" {
   description = "CloudWatch Operations Dashboard name — primary region"
@@ -155,14 +160,14 @@ output "logs_athena_workgroup_secondary" {
   value       = module.observability_secondary.athena_workgroup
 }
 
-# ─── Alerting ─────────────────────────────────────────────────────────────────
+# --- Alerting ----------------------------------------------------------------
 
 output "alerts_sns_topic" {
   description = "SNS topic ARN for all ops alerts"
   value       = module.alerting.sns_topic_arn
 }
 
-# ─── WAF ──────────────────────────────────────────────────────────────────────
+# --- WAF ---------------------------------------------------------------------
 
 output "waf_web_acl_arn" {
   description = "WAF Web ACL ARN — primary region"
@@ -174,14 +179,14 @@ output "waf_secondary_web_acl_arn" {
   value       = module.waf_secondary.web_acl_arn
 }
 
-# ─── GuardDuty ────────────────────────────────────────────────────────────────
+# --- GuardDuty ---------------------------------------------------------------
 
 output "guardduty_primary_detector" {
   description = "GuardDuty detector ID in primary region"
   value       = module.guardduty.primary_detector_id
 }
 
-# ─── FIS Chaos Engineering ───────────────────────────────────────────────────
+# --- FIS Chaos Engineering ---------------------------------------------------
 
 output "fis_terminate_web_template" {
   description = "FIS experiment template ID for web tier EC2 termination chaos"
@@ -193,7 +198,7 @@ output "fis_aurora_failover_template" {
   value       = module.fis.aurora_failover_template_id
 }
 
-# ─── VPC Flow Logs ────────────────────────────────────────────────────────────
+# --- VPC Flow Logs -----------------------------------------------------------
 
 output "primary_flow_log_group" {
   description = "CloudWatch Log Group for primary VPC flow logs"
@@ -205,7 +210,7 @@ output "secondary_flow_log_group" {
   value       = module.network_secondary.flow_log_group
 }
 
-# ─── Compute ASG names ────────────────────────────────────────────────────────
+# --- Compute ASG names -------------------------------------------------------
 
 output "web_asg_primary_name" {
   description = "Web tier ASG name — primary region"

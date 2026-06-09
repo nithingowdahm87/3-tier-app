@@ -11,6 +11,7 @@ resource "aws_cloudfront_distribution" "this" {
   enabled             = true
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
+  web_acl_id          = var.waf_acl_arn != "" ? var.waf_acl_arn : null
   tags                = merge(var.tags, { Name = "${var.name_prefix}-cdn" })
 
   origin {
@@ -50,10 +51,5 @@ resource "aws_cloudfront_distribution" "this" {
     geo_restriction {
       restriction_type = "none"
     }
-  }
-
-  dynamic "web_acl_id" {
-    for_each = var.waf_acl_arn != "" ? [var.waf_acl_arn] : []
-    content {}
   }
 }
