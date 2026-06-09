@@ -3,20 +3,19 @@ variable "name_prefix" {
   description = "Name prefix for NLB resources"
 }
 
-variable "subnet_ids" {
-  type        = list(string)
-  description = "Subnet IDs for the NLB"
-}
-
 variable "vpc_id" {
   type        = string
   description = "VPC ID for target group"
 }
 
-variable "target_port" {
-  type        = number
-  description = "Port the NLB target group forwards traffic to"
-  default     = 8080
+variable "public_subnet_ids" {
+  type        = list(string)
+  description = "Public subnet IDs for the NLB"
+}
+
+variable "alb_arn" {
+  type        = string
+  description = "ARN of the ALB to forward traffic from NLB to"
 }
 
 variable "tags" {

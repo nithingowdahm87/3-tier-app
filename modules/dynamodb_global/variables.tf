@@ -1,3 +1,8 @@
+variable "name_prefix" {
+  type        = string
+  description = "Name prefix used to derive the DynamoDB table name"
+}
+
 variable "hash_key" {
   type    = string
   default = "id"
@@ -5,7 +10,8 @@ variable "hash_key" {
 
 variable "table_name" {
   type        = string
-  description = "Name of the DynamoDB global table"
+  description = "Explicit table name (optional; if empty, name_prefix is used)"
+  default     = ""
 }
 
 variable "range_key" {

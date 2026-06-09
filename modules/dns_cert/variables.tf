@@ -8,7 +8,7 @@ variable "subject_alternative_names" {
   default = []
 }
 
-variable "hosted_zone_id" {
+variable "zone_id" {
   type        = string
   description = "Route 53 hosted zone ID used for DNS validation and A-record creation"
 }

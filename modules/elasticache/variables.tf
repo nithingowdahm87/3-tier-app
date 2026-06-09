@@ -14,10 +14,17 @@ variable "node_type" {
   default = "cache.t4g.small"
 }
 
-variable "num_cache_nodes" {
+variable "num_cache_clusters" {
   type        = number
-  description = "Number of cache nodes in the replication group"
+  description = "Number of cache nodes in the replication group (maps to num_cache_nodes)"
   default     = 2
+}
+
+variable "auth_token" {
+  type        = string
+  description = "AUTH token for Redis in-transit encryption"
+  default     = ""
+  sensitive   = true
 }
 
 variable "subnet_ids" {

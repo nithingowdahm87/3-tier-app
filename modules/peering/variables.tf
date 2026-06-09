@@ -23,6 +23,16 @@ variable "secondary_region" {
   description = "AWS region of the secondary VPC"
 }
 
+variable "primary_vpc_cidr" {
+  type        = string
+  description = "CIDR block of the primary VPC"
+}
+
+variable "secondary_vpc_cidr" {
+  type        = string
+  description = "CIDR block of the secondary VPC"
+}
+
 variable "primary_route_table_ids" {
   type        = list(string)
   description = "Route table IDs in the primary VPC to add peering routes"
@@ -33,16 +43,6 @@ variable "secondary_route_table_ids" {
   type        = list(string)
   description = "Route table IDs in the secondary VPC to add peering routes"
   default     = []
-}
-
-variable "primary_cidr" {
-  type        = string
-  description = "CIDR block of the primary VPC"
-}
-
-variable "secondary_cidr" {
-  type        = string
-  description = "CIDR block of the secondary VPC"
 }
 
 variable "tags" {
