@@ -2,6 +2,12 @@ variable "name_prefix" {
   type = string
 }
 
+variable "role" {
+  type        = string
+  description = "Role label for this ASG tier (e.g. web, app)"
+  default     = "app"
+}
+
 variable "instance_type" {
   type    = string
   default = "t3.small"
