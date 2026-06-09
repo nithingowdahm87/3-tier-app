@@ -12,11 +12,19 @@ resource "aws_guardduty_detector" "primary" {
   enable   = true
 
   datasources {
-    s3_logs { enable = true }
-    kubernetes { audit_logs { enable = false } }
+    s3_logs {
+      enable = true
+    }
+    kubernetes {
+      audit_logs {
+        enable = false
+      }
+    }
     malware_protection {
       scan_ec2_instance_with_findings {
-        ebs_volumes { enable = true }
+        ebs_volumes {
+          enable = true
+        }
       }
     }
   }
@@ -29,10 +37,14 @@ resource "aws_guardduty_detector" "secondary" {
   enable   = true
 
   datasources {
-    s3_logs { enable = true }
+    s3_logs {
+      enable = true
+    }
     malware_protection {
       scan_ec2_instance_with_findings {
-        ebs_volumes { enable = true }
+        ebs_volumes {
+          enable = true
+        }
       }
     }
   }
@@ -40,7 +52,6 @@ resource "aws_guardduty_detector" "secondary" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-guardduty-secondary" })
 }
 
-# SNS notification for HIGH/CRITICAL GuardDuty findings via EventBridge
 resource "aws_cloudwatch_event_rule" "guardduty_findings" {
   provider    = aws.primary
   name        = "${var.name_prefix}-guardduty-high-findings"

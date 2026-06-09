@@ -4,7 +4,6 @@ terraform {
   }
 }
 
-# S3 bucket for CloudTrail logs
 resource "aws_s3_bucket" "trail" {
   bucket        = var.bucket_name
   force_destroy = false
@@ -13,7 +12,9 @@ resource "aws_s3_bucket" "trail" {
 
 resource "aws_s3_bucket_versioning" "trail" {
   bucket = aws_s3_bucket.trail.id
-  versioning_configuration { status = "Enabled" }
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "trail" {
@@ -37,7 +38,6 @@ resource "aws_s3_bucket_public_access_block" "trail" {
 
 resource "aws_s3_bucket_policy" "trail" {
   bucket = aws_s3_bucket.trail.id
-
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -69,7 +69,7 @@ resource "aws_s3_bucket_policy" "trail" {
 }
 
 resource "aws_kms_key" "trail" {
-  description             = "KMS key for CloudTrail logs — ${var.name_prefix}"
+  description             = "KMS key for CloudTrail logs - ${var.name_prefix}"
   deletion_window_in_days = 10
   enable_key_rotation     = true
 
@@ -101,7 +101,6 @@ resource "aws_kms_alias" "trail" {
   target_key_id = aws_kms_key.trail.key_id
 }
 
-# CloudWatch Log Group for real-time CloudTrail events
 resource "aws_cloudwatch_log_group" "trail" {
   name              = "/aws/cloudtrail/${var.name_prefix}"
   retention_in_days = 90
@@ -110,9 +109,14 @@ resource "aws_cloudwatch_log_group" "trail" {
 
 resource "aws_iam_role" "trail" {
   name = "${var.name_prefix}-cloudtrail-cw-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole" Effect = "Allow" Principal = { Service = "cloudtrail.amazonaws.com" } }]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "cloudtrail.amazonaws.com" }
+    }]
   })
 }
 
@@ -128,7 +132,6 @@ resource "aws_iam_role_policy" "trail_cw" {
   })
 }
 
-# Multi-region CloudTrail with log file validation
 resource "aws_cloudtrail" "this" {
   name                          = "${var.name_prefix}-trail"
   s3_bucket_name                = aws_s3_bucket.trail.id

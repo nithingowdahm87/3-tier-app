@@ -1,6 +1,5 @@
-# Customer-managed KMS key for backup vault
 resource "aws_kms_key" "backup" {
-  description             = "KMS key for AWS Backup vault — ${var.name_prefix}"
+  description             = "KMS key for AWS Backup vault - ${var.name_prefix}"
   deletion_window_in_days = 10
   enable_key_rotation     = true
   tags                    = merge(var.tags, { Name = "${var.name_prefix}-backup-kms" })
@@ -16,7 +15,11 @@ resource "aws_iam_role" "backup" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole" Effect = "Allow" Principal = { Service = "backup.amazonaws.com" } }]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "backup.amazonaws.com" }
+    }]
   })
 }
 
@@ -43,14 +46,18 @@ resource "aws_backup_plan" "this" {
     rule_name         = "daily-backup"
     target_vault_name = aws_backup_vault.this.name
     schedule          = "cron(0 3 * * ? *)"
-    lifecycle { delete_after = 7 }
+    lifecycle {
+      delete_after = 7
+    }
   }
 
   rule {
     rule_name         = "weekly-backup"
     target_vault_name = aws_backup_vault.this.name
     schedule          = "cron(0 5 ? * 1 *)"
-    lifecycle { delete_after = 30 }
+    lifecycle {
+      delete_after = 30
+    }
   }
 
   tags = var.tags

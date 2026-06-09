@@ -4,7 +4,6 @@ terraform {
   }
 }
 
-# S3 bucket for Config snapshots
 resource "aws_s3_bucket" "config" {
   bucket        = var.bucket_name
   force_destroy = false
@@ -45,9 +44,14 @@ resource "aws_s3_bucket_policy" "config" {
 
 resource "aws_iam_role" "config" {
   name = "${var.name_prefix}-config-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole" Effect = "Allow" Principal = { Service = "config.amazonaws.com" } }]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "config.amazonaws.com" }
+    }]
   })
 }
 
@@ -78,18 +82,17 @@ resource "aws_config_configuration_recorder_status" "this" {
   depends_on = [aws_config_delivery_channel.this]
 }
 
-# Managed Config Rules
 locals {
   managed_rules = {
-    "restricted-ssh"                      = {}
-    "vpc-default-security-group-closed"   = {}
-    "s3-bucket-public-read-prohibited"    = {}
-    "encrypted-volumes"                   = {}
-    "rds-storage-encrypted"               = {}
-    "rds-instance-public-access-check"    = {}
-    "iam-password-policy"                 = {}
-    "root-account-mfa-enabled"            = {}
-    "access-keys-rotated"                 = { input_parameters = jsonencode({ maxAccessKeyAge = "90" }) }
+    "restricted-ssh"                    = {}
+    "vpc-default-security-group-closed" = {}
+    "s3-bucket-public-read-prohibited"  = {}
+    "encrypted-volumes"                 = {}
+    "rds-storage-encrypted"             = {}
+    "rds-instance-public-access-check"  = {}
+    "iam-password-policy"               = {}
+    "root-account-mfa-enabled"          = {}
+    "access-keys-rotated"               = { input_parameters = jsonencode({ maxAccessKeyAge = "90" }) }
   }
 }
 

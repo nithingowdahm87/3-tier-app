@@ -4,7 +4,6 @@ terraform {
   }
 }
 
-# X-Ray sampling rules
 resource "aws_xray_sampling_rule" "default" {
   rule_name      = "${var.name_prefix}-default"
   priority       = 10000
@@ -19,7 +18,6 @@ resource "aws_xray_sampling_rule" "default" {
   version        = 1
 }
 
-# Kinesis Firehose -> S3 for centralised log aggregation
 resource "aws_s3_bucket" "logs" {
   bucket        = var.logs_bucket_name
   force_destroy = false
@@ -37,15 +35,22 @@ resource "aws_s3_bucket_public_access_block" "logs" {
 resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
   bucket = aws_s3_bucket.logs.id
   rule {
-    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
   }
 }
 
 resource "aws_iam_role" "firehose" {
   name = "${var.name_prefix}-firehose-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole" Effect = "Allow" Principal = { Service = "firehose.amazonaws.com" } }]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "firehose.amazonaws.com" }
+    }]
   })
 }
 
@@ -78,7 +83,6 @@ resource "aws_kinesis_firehose_delivery_stream" "logs" {
   tags = var.tags
 }
 
-# Athena for SQL querying over S3 logs
 resource "aws_athena_workgroup" "logs" {
   name = "${var.name_prefix}-logs"
 
@@ -93,12 +97,6 @@ resource "aws_athena_workgroup" "logs" {
 
   tags = var.tags
 }
-
-# ---- CloudWatch Dashboard -------------------------------------------------
-# Core widgets are always created.
-# The WAF Blocked Requests widget is optional: it is included only when
-# var.waf_acl_name is non-empty, which breaks the circular dependency that
-# previously existed between this module and modules/waf.
 
 locals {
   core_widgets = [

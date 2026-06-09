@@ -3,9 +3,26 @@ resource "aws_security_group" "alb" {
   description = "External ALB SG - allows HTTP and HTTPS from internet"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 80  to_port = 80  protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }
-  ingress { from_port = 443 to_port = 443 protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }
-  egress  { from_port = 0   to_port = 0   protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-alb-sg" })
 }
@@ -15,9 +32,26 @@ resource "aws_security_group" "web" {
   description = "Web tier SG - allows traffic only from ALB and bastion"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 80 to_port = 80 protocol = "tcp" security_groups = [aws_security_group.alb.id] }
-  ingress { from_port = 22 to_port = 22 protocol = "tcp" security_groups = [aws_security_group.bastion.id] }
-  egress  { from_port = 0  to_port = 0  protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-web-sg" })
 }
@@ -27,8 +61,19 @@ resource "aws_security_group" "internal_alb" {
   description = "Internal ALB SG - allows traffic only from web tier"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 8080 to_port = 8080 protocol = "tcp" security_groups = [aws_security_group.web.id] }
-  egress  { from_port = 0    to_port = 0    protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  ingress {
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.web.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-internal-alb-sg" })
 }
@@ -38,9 +83,26 @@ resource "aws_security_group" "app" {
   description = "App tier SG - allows traffic only from internal ALB and bastion"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 8080 to_port = 8080 protocol = "tcp" security_groups = [aws_security_group.internal_alb.id] }
-  ingress { from_port = 22   to_port = 22   protocol = "tcp" security_groups = [aws_security_group.bastion.id] }
-  egress  { from_port = 0    to_port = 0    protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  ingress {
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.internal_alb.id]
+  }
+
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-app-sg" })
 }
@@ -50,10 +112,19 @@ resource "aws_security_group" "aurora" {
   description = "Aurora SG - MySQL only from app tier, no unrestricted egress"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 3306 to_port = 3306 protocol = "tcp" security_groups = [aws_security_group.app.id] }
-  # Locked egress: Aurora only needs to reach AWS service endpoints (Secrets Manager, monitoring)
-  # within the VPC — no internet egress needed
-  egress { from_port = 443 to_port = 443 protocol = "tcp" cidr_blocks = [var.vpc_cidr] }
+  ingress {
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app.id]
+  }
+
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-aurora-sg" })
 }
@@ -63,20 +134,41 @@ resource "aws_security_group" "bastion" {
   description = "Bastion SG - SSH restricted to known CIDR only"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 22 to_port = 22 protocol = "tcp" cidr_blocks = [var.bastion_allowed_cidr] }
-  egress  { from_port = 0  to_port = 0  protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.bastion_allowed_cidr]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-bastion-sg" })
 }
 
-# Redis SG — used by elasticache module
 resource "aws_security_group" "redis" {
   name        = "${var.name_prefix}-redis-sg"
   description = "Redis SG - allows traffic only from app tier"
   vpc_id      = var.vpc_id
 
-  ingress { from_port = 6379 to_port = 6379 protocol = "tcp" security_groups = [aws_security_group.app.id] }
-  egress  { from_port = 0    to_port = 0    protocol = "-1"  cidr_blocks = ["0.0.0.0/0"] }
+  ingress {
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-redis-sg" })
 }
