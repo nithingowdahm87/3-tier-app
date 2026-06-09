@@ -86,7 +86,7 @@ resource "aws_fis_experiment_template" "aurora_failover" {
     name           = "aurora-primary"
     resource_type  = "aws:rds:cluster"
     selection_mode = "ALL"
-    resource_arn   = [var.aurora_cluster_arn]
+    resource_arns  = [var.aurora_cluster_arn]
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-aurora-failover" })
