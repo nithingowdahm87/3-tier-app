@@ -1,3 +1,8 @@
+variable "name_prefix" {
+  type    = string
+  default = ""
+}
+
 variable "bucket_name" {
   type = string
 }

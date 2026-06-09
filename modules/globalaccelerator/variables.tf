@@ -2,14 +2,14 @@ variable "name_prefix" {
   type = string
 }
 
-variable "primary_nlb_arn" {
+variable "nlb_primary_arn" {
   type        = string
-  description = "ARN of the primary region NLB endpoint"
+  description = "ARN of the primary region NLB"
 }
 
-variable "secondary_nlb_arn" {
+variable "nlb_secondary_arn" {
   type        = string
-  description = "ARN of the secondary region NLB endpoint"
+  description = "ARN of the secondary region NLB"
 }
 
 variable "primary_region" {

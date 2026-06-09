@@ -19,11 +19,21 @@ variable "secondary_vpc_cidr" {
 }
 
 variable "primary_route_table_ids" {
-  type = list(string)
+  type    = list(string)
+  default = []
 }
 
 variable "secondary_route_table_ids" {
-  type = list(string)
+  type    = list(string)
+  default = []
+}
+
+variable "primary_region" {
+  type = string
+}
+
+variable "secondary_region" {
+  type = string
 }
 
 variable "tags" {

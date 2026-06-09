@@ -92,7 +92,8 @@ locals {
     "rds-instance-public-access-check"  = {}
     "iam-password-policy"               = {}
     "root-account-mfa-enabled"          = {}
-    "access-keys-rotated"               = { input_parameters = jsonencode({ maxAccessKeyAge = "90" }) }
+    "cloudtrail-enabled"                = {}
+    "multi-region-cloudtrail-enabled"   = {}
   }
 }
 
@@ -106,6 +107,5 @@ resource "aws_config_config_rule" "managed" {
     source_identifier = upper(replace(each.key, "-", "_"))
   }
 
-  input_parameters = lookup(each.value, "input_parameters", null)
-  depends_on       = [aws_config_configuration_recorder_status.this]
+  depends_on = [aws_config_configuration_recorder_status.this]
 }
