@@ -34,7 +34,6 @@ module "logging" {
   tags               = local.common_tags
 }
 
-# Secondary region logging bucket for ALB access logs (cross-region log delivery requires same-region bucket)
 module "logging_secondary" {
   source    = "./modules/logging"
   providers = { aws = aws.secondary }
@@ -50,18 +49,11 @@ module "keypair" {
   source    = "./modules/keypair"
   providers = { aws = aws.primary }
 
-  key_name    = "${var.project_name}-${var.environment}-key"
-  environment = var.environment
+  name_prefix = "${var.project_name}-${var.environment}"
   tags        = local.common_tags
 }
 
 # ─── Secrets: Aurora Password ─────────────────────────────────────────────────
-# Two-phase bootstrap:
-#   Phase 1 (one-time): terraform apply -target=module.aurora_secret
-#   Then seed: aws secretsmanager put-secret-value \
-#     --secret-id /${var.environment}/aurora/master_password \
-#     --secret-string '{"password": "YourStrongPassword123!"}'
-#   Phase 2: terraform apply (full)
 
 module "aurora_secret" {
   source    = "./modules/secrets"
@@ -83,12 +75,6 @@ locals {
 }
 
 # ─── Secrets: Redis AUTH Token ────────────────────────────────────────────────
-# Two-phase bootstrap (same as Aurora):
-#   Phase 1 (one-time): terraform apply -target=module.redis_secret
-#   Then seed: aws secretsmanager put-secret-value \
-#     --secret-id /${var.environment}/redis/auth_token \
-#     --secret-string "{\"token\": \"$(openssl rand -base64 32)\"}"
-#   Phase 2: terraform apply (full)
 
 module "redis_secret" {
   source    = "./modules/secrets"
@@ -155,9 +141,7 @@ module "security_secondary" {
   tags                 = local.common_tags
 }
 
-# ─── VPC Endpoints (private subnet traffic never hits internet) ───────────────
-# Includes endpoints for SSM (ssm, ssmmessages, ec2messages) enabling
-# AWS Systems Manager Session Manager as a bastion replacement.
+# ─── VPC Endpoints ───────────────────────────────────────────────────────────
 
 module "vpc_endpoints_primary" {
   source    = "./modules/vpc_endpoints"
@@ -185,8 +169,7 @@ module "vpc_endpoints_secondary" {
   tags               = local.common_tags
 }
 
-# ─── Bastion (optional — disabled by default in favour of SSM Session Manager) ─
-# Set bastion_enabled = true in tfvars only if SSM is insufficient for your use case.
+# ─── Bastion ──────────────────────────────────────────────────────────────────
 
 module "bastion_primary" {
   count     = var.bastion_enabled ? 1 : 0
@@ -194,21 +177,14 @@ module "bastion_primary" {
   providers = { aws = aws.primary }
 
   name_prefix   = "${var.project_name}-${var.environment}-primary"
-  subnet_ids    = module.network_primary.public_subnet_ids
+  vpc_id        = module.network_primary.vpc_id
+  subnet_id     = module.network_primary.public_subnet_ids[0]
   bastion_sg_id = module.security_primary.bastion_sg_id
   key_name      = module.keypair.key_name
-  instance_type = var.bastion_instance_type
   tags          = local.common_tags
 }
 
 # ─── Load Balancers ───────────────────────────────────────────────────────────
-# APPLY ORDER NOTE:
-#   The ACM certificate for CloudFront (cloudfront_acm_certificate_arn) must be
-#   pre-created in us-east-1 and its ARN provided as a variable before apply.
-#   The ALB certs (primary + secondary) use module.dns_cert which is applied
-#   after the NLBs exist. On fresh accounts run:
-#     terraform apply -target=module.nlb_primary -target=module.nlb_secondary
-#   then: terraform apply
 
 module "alb_primary" {
   source    = "./modules/alb"
@@ -270,11 +246,7 @@ module "dns_cert" {
 
   domain_name               = var.domain_name
   subject_alternative_names = ["www.${var.domain_name}"]
-  hosted_zone_id            = var.hosted_zone_id
-  nlb_dns_name              = module.nlb_primary.nlb_dns_name
-  nlb_zone_id               = module.nlb_primary.nlb_zone_id
-  secondary_nlb_dns_name    = module.nlb_secondary.nlb_dns_name
-  secondary_nlb_zone_id     = module.nlb_secondary.nlb_zone_id
+  zone_id                   = var.hosted_zone_id
   tags                      = local.common_tags
 }
 
@@ -284,105 +256,78 @@ module "dns_cert_secondary" {
 
   domain_name               = var.domain_name
   subject_alternative_names = ["www.${var.domain_name}"]
-  hosted_zone_id            = var.hosted_zone_id
-  nlb_dns_name              = module.nlb_secondary.nlb_dns_name
-  nlb_zone_id               = module.nlb_secondary.nlb_zone_id
-  secondary_nlb_dns_name    = module.nlb_primary.nlb_dns_name
-  secondary_nlb_zone_id     = module.nlb_primary.nlb_zone_id
+  zone_id                   = var.hosted_zone_id
   tags                      = local.common_tags
 }
 
 # ─── Compute (Web + App ASGs) ─────────────────────────────────────────────────
-# SSM Session Manager is the recommended access method (zero open ports).
-# The user_data installs amazon-ssm-agent on all instances by default.
-# To start a session: aws ssm start-session --target <instance-id>
 
 module "web_asg_primary" {
   source    = "./modules/compute"
   providers = { aws = aws.primary }
 
-  name_prefix             = "${var.project_name}-${var.environment}-primary"
-  role                    = "web"
-  instance_type           = var.web_instance_type
-  fallback_instance_type  = var.web_fallback_instance_type
-  key_name                = module.keypair.key_name
-  security_group_ids      = [module.security_primary.web_sg_id]
-  subnet_ids              = module.network_primary.private_subnet_ids
-  target_group_arns       = [module.alb_primary.web_target_group_arn]
-  min_size                = var.web_min_size
-  max_size                = var.web_max_size
-  desired_capacity        = var.web_desired_capacity
-  on_demand_base_capacity = var.on_demand_base_capacity
-  user_data               = var.web_user_data
-  secret_path_prefix      = "/${var.environment}"
-  tags                    = local.common_tags
+  name_prefix        = "${var.project_name}-${var.environment}-primary"
+  instance_type      = var.web_instance_type
+  key_name           = module.keypair.key_name
+  security_group_ids = [module.security_primary.web_sg_id]
+  subnet_ids         = module.network_primary.private_subnet_ids
+  target_group_arns  = [module.alb_primary.web_target_group_arn]
+  min_size           = var.web_min_size
+  max_size           = var.web_max_size
+  desired_capacity   = var.web_desired_capacity
+  user_data          = var.web_user_data
+  tags               = local.common_tags
 }
 
 module "app_asg_primary" {
   source    = "./modules/compute"
   providers = { aws = aws.primary }
 
-  name_prefix             = "${var.project_name}-${var.environment}-primary"
-  role                    = "app"
-  instance_type           = var.app_instance_type
-  fallback_instance_type  = var.app_fallback_instance_type
-  key_name                = module.keypair.key_name
-  security_group_ids      = [module.security_primary.app_sg_id]
-  subnet_ids              = module.network_primary.private_subnet_ids
-  target_group_arns       = [module.alb_primary.app_target_group_arn]
-  min_size                = var.app_min_size
-  max_size                = var.app_max_size
-  desired_capacity        = var.app_desired_capacity
-  on_demand_base_capacity = var.on_demand_base_capacity
-  user_data               = var.app_user_data
-  secret_path_prefix      = "/${var.environment}"
-  tags                    = local.common_tags
+  name_prefix        = "${var.project_name}-${var.environment}-primary"
+  instance_type      = var.app_instance_type
+  key_name           = module.keypair.key_name
+  security_group_ids = [module.security_primary.app_sg_id]
+  subnet_ids         = module.network_primary.private_subnet_ids
+  target_group_arns  = [module.alb_primary.app_target_group_arn]
+  min_size           = var.app_min_size
+  max_size           = var.app_max_size
+  desired_capacity   = var.app_desired_capacity
+  user_data          = var.app_user_data
+  tags               = local.common_tags
 }
-
-# ─── Secondary Compute (Web + App ASGs) ───────────────────────────────────────
-# These ASGs sit in us-west-2 and serve traffic during failover.
-# They are warm standby: running at minimum size, scaling up on failover.
 
 module "web_asg_secondary" {
   source    = "./modules/compute"
   providers = { aws = aws.secondary }
 
-  name_prefix             = "${var.project_name}-${var.environment}-secondary"
-  role                    = "web"
-  instance_type           = var.web_instance_type
-  fallback_instance_type  = var.web_fallback_instance_type
-  key_name                = module.keypair.key_name
-  security_group_ids      = [module.security_secondary.web_sg_id]
-  subnet_ids              = module.network_secondary.private_subnet_ids
-  target_group_arns       = [module.alb_secondary.web_target_group_arn]
-  min_size                = var.web_min_size
-  max_size                = var.web_max_size
-  desired_capacity        = var.web_desired_capacity
-  on_demand_base_capacity = var.on_demand_base_capacity
-  user_data               = var.web_user_data
-  secret_path_prefix      = "/${var.environment}"
-  tags                    = local.common_tags
+  name_prefix        = "${var.project_name}-${var.environment}-secondary"
+  instance_type      = var.web_instance_type
+  key_name           = module.keypair.key_name
+  security_group_ids = [module.security_secondary.web_sg_id]
+  subnet_ids         = module.network_secondary.private_subnet_ids
+  target_group_arns  = [module.alb_secondary.web_target_group_arn]
+  min_size           = var.web_min_size
+  max_size           = var.web_max_size
+  desired_capacity   = var.web_desired_capacity
+  user_data          = var.web_user_data
+  tags               = local.common_tags
 }
 
 module "app_asg_secondary" {
   source    = "./modules/compute"
   providers = { aws = aws.secondary }
 
-  name_prefix             = "${var.project_name}-${var.environment}-secondary"
-  role                    = "app"
-  instance_type           = var.app_instance_type
-  fallback_instance_type  = var.app_fallback_instance_type
-  key_name                = module.keypair.key_name
-  security_group_ids      = [module.security_secondary.app_sg_id]
-  subnet_ids              = module.network_secondary.private_subnet_ids
-  target_group_arns       = [module.alb_secondary.app_target_group_arn]
-  min_size                = var.app_min_size
-  max_size                = var.app_max_size
-  desired_capacity        = var.app_desired_capacity
-  on_demand_base_capacity = var.on_demand_base_capacity
-  user_data               = var.app_user_data
-  secret_path_prefix      = "/${var.environment}"
-  tags                    = local.common_tags
+  name_prefix        = "${var.project_name}-${var.environment}-secondary"
+  instance_type      = var.app_instance_type
+  key_name           = module.keypair.key_name
+  security_group_ids = [module.security_secondary.app_sg_id]
+  subnet_ids         = module.network_secondary.private_subnet_ids
+  target_group_arns  = [module.alb_secondary.app_target_group_arn]
+  min_size           = var.app_min_size
+  max_size           = var.app_max_size
+  desired_capacity   = var.app_desired_capacity
+  user_data          = var.app_user_data
+  tags               = local.common_tags
 }
 
 # ─── Database (Aurora Global) ─────────────────────────────────────────────────
@@ -406,21 +351,18 @@ module "aurora" {
 }
 
 # ─── ElastiCache Redis ────────────────────────────────────────────────────────
-# Redis AUTH token is fetched from Secrets Manager (not a tfvar) for security.
 
 module "elasticache" {
   source    = "./modules/elasticache"
   providers = { aws = aws.primary }
 
-  name_prefix      = "${var.project_name}-${var.environment}"
-  environment      = var.environment
-  subnet_ids       = module.network_primary.private_subnet_ids
-  redis_sg_id      = module.security_primary.redis_sg_id
-  node_type        = var.redis_node_type
-  num_cache_nodes  = var.redis_num_nodes
-  redis_auth_token = local.redis_auth_token
-  log_group_name   = "/aws/elasticache/${var.project_name}-${var.environment}/redis"
-  tags             = local.common_tags
+  name_prefix        = "${var.project_name}-${var.environment}"
+  subnet_ids         = module.network_primary.private_subnet_ids
+  security_group_ids = [module.security_primary.redis_sg_id]
+  node_type          = var.redis_node_type
+  num_cache_clusters = var.redis_num_nodes
+  auth_token         = local.redis_auth_token
+  tags               = local.common_tags
 }
 
 # ─── DynamoDB Global Table ────────────────────────────────────────────────────
@@ -429,14 +371,13 @@ module "dynamodb" {
   source    = "./modules/dynamodb_global"
   providers = { aws = aws.primary }
 
-  table_name     = "${var.project_name}-${var.environment}-sessions"
-  hash_key       = "sessionId"
-  replica_region = var.secondary_region
-  tags           = local.common_tags
+  name_prefix     = "${var.project_name}-${var.environment}-sessions"
+  hash_key        = "sessionId"
+  replica_regions = [var.secondary_region]
+  tags            = local.common_tags
 }
 
 # ─── AWS Backup ───────────────────────────────────────────────────────────────
-# Covers Aurora primary + secondary clusters and DynamoDB global table.
 
 module "backup_primary" {
   source    = "./modules/backup"
@@ -468,16 +409,16 @@ module "vpc_peering" {
     aws.peer = aws.secondary
   }
 
-  name_prefix               = "${var.project_name}-${var.environment}"
-  vpc_id                    = module.network_primary.vpc_id
-  peer_vpc_id               = module.network_secondary.vpc_id
-  peer_owner_id             = var.aws_account_id
-  peer_region               = var.secondary_region
-  requester_route_table_ids = module.network_primary.private_route_table_ids
-  peer_route_table_ids      = module.network_secondary.private_route_table_ids
-  requester_cidr            = var.primary_vpc_cidr
-  peer_cidr                 = var.secondary_vpc_cidr
-  tags                      = local.common_tags
+  name_prefix                = "${var.project_name}-${var.environment}"
+  primary_vpc_id             = module.network_primary.vpc_id
+  secondary_vpc_id           = module.network_secondary.vpc_id
+  primary_vpc_cidr           = var.primary_vpc_cidr
+  secondary_vpc_cidr         = var.secondary_vpc_cidr
+  primary_region             = var.primary_region
+  secondary_region           = var.secondary_region
+  primary_route_table_ids    = module.network_primary.private_route_table_ids
+  secondary_route_table_ids  = module.network_secondary.private_route_table_ids
+  tags                       = local.common_tags
 }
 
 # ─── CloudTrail ───────────────────────────────────────────────────────────────
@@ -507,31 +448,24 @@ module "guardduty" {
 }
 
 # ─── Security Hub (both regions) ──────────────────────────────────────────────
-# Enabled in BOTH regions so the secondary region's findings are captured.
 
 module "security_hub" {
   source    = "./modules/security_hub"
   providers = { aws = aws.primary }
 
-  name_prefix          = "${var.project_name}-${var.environment}"
-  region               = var.primary_region
-  alerts_sns_topic_arn = module.alerting.sns_topic_arn
-  tags                 = local.common_tags
+  name_prefix = "${var.project_name}-${var.environment}"
+  tags        = local.common_tags
 }
 
 module "security_hub_secondary" {
   source    = "./modules/security_hub"
   providers = { aws = aws.secondary }
 
-  name_prefix          = "${var.project_name}-${var.environment}"
-  region               = var.secondary_region
-  alerts_sns_topic_arn = module.alerting.sns_topic_arn
-  tags                 = local.common_tags
+  name_prefix = "${var.project_name}-${var.environment}"
+  tags        = local.common_tags
 }
 
 # ─── AWS Config (both regions) ────────────────────────────────────────────────
-# AWS Config is regional; rules only evaluate resources in the region where
-# Config is enabled. Both regions must have Config to achieve full coverage.
 
 module "config_rules" {
   source    = "./modules/config_rules"
@@ -554,31 +488,28 @@ module "config_rules_secondary" {
 }
 
 # ─── Compliance Config Rules (extended rule set) ──────────────────────────────
-# modules/compliance adds S3/EBS/EC2/RDS/KMS/IAM/ACM/tagging rules on top of
-# the baseline config_rules module. Both regions must have Config enabled first.
 
 module "compliance" {
   source    = "./modules/compliance"
   providers = { aws = aws.primary }
 
-  name_prefix        = "${var.project_name}-${var.environment}"
-  config_recorder_id = module.config_rules.recorder_id
-  tags               = local.common_tags
+  name_prefix   = "${var.project_name}-${var.environment}"
+  recorder_id   = module.config_rules.recorder_id
+  config_bucket = var.config_bucket_name
+  tags          = local.common_tags
 }
 
 module "compliance_secondary" {
   source    = "./modules/compliance"
   providers = { aws = aws.secondary }
 
-  name_prefix        = "${var.project_name}-${var.environment}"
-  config_recorder_id = module.config_rules_secondary.recorder_id
-  tags               = local.common_tags
+  name_prefix   = "${var.project_name}-${var.environment}"
+  recorder_id   = module.config_rules_secondary.recorder_id
+  config_bucket = var.config_bucket_name
+  tags          = local.common_tags
 }
 
-# ─── Observability (Dashboard + Firehose + Athena + X-Ray) ───────────────────
-# waf_acl_name is intentionally left empty here to break the WAF <-> observability
-# circular dependency. After WAF is deployed, you can pass module.waf.web_acl_id
-# to add the WAF Blocked Requests widget to the dashboard.
+# ─── Observability ───────────────────────────────────────────────────────────
 
 module "observability" {
   source    = "./modules/observability"
@@ -591,14 +522,11 @@ module "observability" {
   app_asg_name        = module.app_asg_primary.asg_name
   aurora_cluster_id   = module.aurora.primary_cluster_id
   dynamodb_table_name = module.dynamodb.table_name
-  waf_acl_name        = "" # set to module.waf.web_acl_id after WAF is deployed
+  waf_acl_name        = ""
   region              = var.primary_region
   tags                = local.common_tags
 }
 
-# Secondary observability stack in us-west-2.
-# waf_secondary MUST log to this region-local Firehose — WAF cannot deliver
-# logs to a Kinesis Firehose in another region (ARNs are region-scoped).
 module "observability_secondary" {
   source    = "./modules/observability"
   providers = { aws = aws.secondary }
@@ -610,16 +538,12 @@ module "observability_secondary" {
   app_asg_name        = module.app_asg_secondary.asg_name
   aurora_cluster_id   = module.aurora.secondary_cluster_id
   dynamodb_table_name = module.dynamodb.table_name
-  waf_acl_name        = "" # set to module.waf_secondary.web_acl_id after WAF is deployed
+  waf_acl_name        = ""
   region              = var.secondary_region
   tags                = local.common_tags
 }
 
-# ─── Platform Alarms (NAT GW, KMS, Secrets Manager, Route53, ACM, Lambda) ────
-# modules/alarms_platform provides alarms that the core alerting module doesn't
-# cover: NAT Gateway saturation/packet-drop, KMS throttles, Secrets Manager
-# throttles, Route53 health-check failures, ACM cert expiry, and rotation Lambda
-# errors. Wire to the primary SNS topic so all ops alerts reach one inbox.
+# ─── Platform Alarms ─────────────────────────────────────────────────────────
 
 module "alarms_platform" {
   source    = "./modules/alarms_platform"
@@ -638,7 +562,7 @@ module "alarms_platform" {
   tags                               = local.common_tags
 }
 
-# ─── Alerting (SNS + CloudWatch Alarms + ASG Notifications) ──────────────────
+# ─── Alerting ─────────────────────────────────────────────────────────────────
 
 module "alerting" {
   source    = "./modules/alerting"
@@ -658,9 +582,7 @@ module "alerting" {
   tags                             = local.common_tags
 }
 
-# ─── WAF + Shield Advanced ────────────────────────────────────────────────────
-# WAF is deployed in BOTH regions to protect primary and secondary ALBs equally.
-# Each WAF logs to its region-local Firehose (observability / observability_secondary).
+# ─── WAF ──────────────────────────────────────────────────────────────────────
 
 module "waf" {
   source    = "./modules/waf"
@@ -677,17 +599,14 @@ module "waf_secondary" {
   source    = "./modules/waf"
   providers = { aws = aws.secondary }
 
-  name_prefix = "${var.project_name}-${var.environment}-secondary"
-  alb_arn     = module.alb_secondary.external_alb_arn
-  nlb_arn     = module.nlb_secondary.nlb_arn
-  # Fixed: Kinesis Firehose is region-scoped — WAF can only deliver logs to a
-  # Firehose in the same region. Points to secondary region Firehose.
+  name_prefix             = "${var.project_name}-${var.environment}-secondary"
+  alb_arn                 = module.alb_secondary.external_alb_arn
+  nlb_arn                 = module.nlb_secondary.nlb_arn
   waf_log_destination_arn = module.observability_secondary.firehose_arn
   tags                    = local.common_tags
 }
 
 # ─── CloudFront CDN + S3 Static Assets ───────────────────────────────────────
-# cloudfront_acm_certificate_arn MUST be pre-created in us-east-1.
 
 module "cdn" {
   source = "./modules/cdn"
@@ -697,10 +616,9 @@ module "cdn" {
   }
 
   name_prefix            = "${var.project_name}-${var.environment}"
-  bucket_name            = var.static_assets_bucket_name
-  domain_name            = var.domain_name
+  alb_dns_name           = module.alb_primary.external_alb_dns_name
   acm_certificate_arn    = var.cloudfront_acm_certificate_arn
-  waf_web_acl_arn        = module.waf.web_acl_arn
+  waf_acl_arn            = module.waf.web_acl_arn
   cloudfront_logs_bucket = "${module.logging.bucket_name}.s3.amazonaws.com"
   tags                   = local.common_tags
 }
@@ -714,9 +632,8 @@ module "globalaccelerator" {
   name_prefix       = "${var.project_name}-${var.environment}"
   primary_region    = var.primary_region
   secondary_region  = var.secondary_region
-  primary_nlb_arn   = module.nlb_primary.nlb_arn
-  secondary_nlb_arn = module.nlb_secondary.nlb_arn
-  logs_bucket_name  = module.observability.logs_bucket_name
+  nlb_primary_arn   = module.nlb_primary.nlb_arn
+  nlb_secondary_arn = module.nlb_secondary.nlb_arn
   tags              = local.common_tags
 }
 
