@@ -6,7 +6,7 @@ terraform {
 
 resource "aws_xray_sampling_rule" "default" {
   rule_name      = "${var.name_prefix}-default"
-  priority       = 10000
+  priority       = 9999
   reservoir_size = 5
   fixed_rate     = 0.05
   url_path       = "*"
