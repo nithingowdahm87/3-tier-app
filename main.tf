@@ -356,13 +356,13 @@ module "elasticache" {
   source    = "./modules/elasticache"
   providers = { aws = aws.primary }
 
-  name_prefix        = "${var.project_name}-${var.environment}"
-  subnet_ids         = module.network_primary.private_subnet_ids
-  security_group_ids = [module.security_primary.redis_sg_id]
-  node_type          = var.redis_node_type
-  num_cache_clusters = var.redis_num_nodes
-  auth_token         = local.redis_auth_token
-  tags               = local.common_tags
+  name_prefix      = "${var.project_name}-${var.environment}"
+  subnet_ids       = module.network_primary.private_subnet_ids
+  redis_sg_id      = module.security_primary.redis_sg_id
+  node_type        = var.redis_node_type
+  num_cache_nodes  = var.redis_num_nodes
+  redis_auth_token = local.redis_auth_token
+  tags             = local.common_tags
 }
 
 # ─── DynamoDB Global Table ────────────────────────────────────────────────────
@@ -409,16 +409,14 @@ module "vpc_peering" {
     aws.peer = aws.secondary
   }
 
-  name_prefix                = "${var.project_name}-${var.environment}"
-  primary_vpc_id             = module.network_primary.vpc_id
-  secondary_vpc_id           = module.network_secondary.vpc_id
-  primary_vpc_cidr           = var.primary_vpc_cidr
-  secondary_vpc_cidr         = var.secondary_vpc_cidr
-  primary_region             = var.primary_region
-  secondary_region           = var.secondary_region
-  primary_route_table_ids    = module.network_primary.private_route_table_ids
-  secondary_route_table_ids  = module.network_secondary.private_route_table_ids
-  tags                       = local.common_tags
+  vpc_id                    = module.network_primary.vpc_id
+  peer_vpc_id               = module.network_secondary.vpc_id
+  peer_region               = var.secondary_region
+  primary_cidr              = var.primary_vpc_cidr
+  secondary_cidr            = var.secondary_vpc_cidr
+  primary_route_table_ids   = module.network_primary.private_route_table_ids
+  secondary_route_table_ids = module.network_secondary.private_route_table_ids
+  tags                      = local.common_tags
 }
 
 # ─── CloudTrail ───────────────────────────────────────────────────────────────
@@ -549,17 +547,17 @@ module "alarms_platform" {
   source    = "./modules/alarms_platform"
   providers = { aws = aws.primary }
 
-  name_prefix                        = "${var.project_name}-${var.environment}"
-  sns_topic_arn                      = module.alerting.sns_topic_arn
-  nat_gateway_ids                    = module.network_primary.nat_gateway_ids
-  health_check_id                    = var.route53_health_check_id
-  rotation_lambda_name               = var.secrets_rotation_lambda_name
-  nat_connection_threshold           = var.nat_connection_threshold
-  nat_packet_drop_threshold          = var.nat_packet_drop_threshold
-  kms_throttle_threshold             = var.kms_throttle_threshold
-  secretsmanager_throttle_threshold  = var.secretsmanager_throttle_threshold
-  acm_expiry_days_threshold          = var.acm_expiry_days_threshold
-  tags                               = local.common_tags
+  name_prefix                       = "${var.project_name}-${var.environment}"
+  sns_topic_arn                     = module.alerting.sns_topic_arn
+  nat_gateway_ids                   = module.network_primary.nat_gateway_ids
+  health_check_id                   = var.route53_health_check_id
+  rotation_lambda_name              = var.secrets_rotation_lambda_name
+  nat_connection_threshold          = var.nat_connection_threshold
+  nat_packet_drop_threshold         = var.nat_packet_drop_threshold
+  kms_throttle_threshold            = var.kms_throttle_threshold
+  secretsmanager_throttle_threshold = var.secretsmanager_throttle_threshold
+  acm_expiry_days_threshold         = var.acm_expiry_days_threshold
+  tags                              = local.common_tags
 }
 
 # ─── Alerting ─────────────────────────────────────────────────────────────────
