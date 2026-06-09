@@ -1,31 +1,39 @@
 # Terraform
 .terraform/
 .terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
 *.tfstate
-*.tfstate.backup
-*.tfplan
+*.tfstate.*
 crash.log
 crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.tfstate.lock.info
 
-# Variable files with real values
-terraform.tfvars
-*.auto.tfvars
+# Terragrunt
+.terragrunt-cache/
+terragrunt-debug.tfvars.json
 
-# Backend config files with real bucket names (NEVER commit these)
+# Backend config (contains bucket name — keep out of git)
 backend.hcl
-ci-backend.hcl
 
-# CI-generated plan and drift output files
-plan_output.txt
-drift_output.txt
-tfplan
+# Generated backend by Terragrunt
+backend_generated.tf
 
-# OS
-.DS_Store
-Thumbs.db
+# Env vars / secrets
+*.env
+.env
+terraform.tfvars
 
-# Editor
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# OS
+.DS_Store
+Thumbs.db

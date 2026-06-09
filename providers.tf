@@ -13,23 +13,27 @@ terraform {
       version = "~> 3.6"
     }
   }
+  required_version = ">= 1.5.0"
 
-  # Use partial backend config: terraform init -backend-config=backend.hcl
-  backend "s3" {}
+  # backend "s3" {} block is intentionally removed.
+  # Terragrunt generates backend_generated.tf at init time,
+  # which auto-creates the S3 bucket + DynamoDB lock table.
 }
 
 provider "aws" {
   alias  = "primary"
   region = var.primary_region
+  default_tags { tags = { ManagedBy = "terraform" } }
 }
 
 provider "aws" {
   alias  = "secondary"
   region = var.secondary_region
+  default_tags { tags = { ManagedBy = "terraform" } }
 }
 
-# Required for CloudFront ACM certificates and Global resources
 provider "aws" {
   alias  = "us_east_1"
   region = "us-east-1"
+  default_tags { tags = { ManagedBy = "terraform" } }
 }
