@@ -1,13 +1,8 @@
-# Partial backend configuration — fill in your real values and run:
-#   terraform init -backend-config=backend.hcl
+# Partial backend configuration for S3 remote state.
+# Usage: terraform init -backend-config=backend.hcl
 #
-# NEVER commit this file with real values to version control.
-# Add backend.hcl to .gitignore if it contains real bucket names.
-#
-# NOTE: Using S3 native locking (use_lockfile = true) — no DynamoDB table needed.
-# Requires Terraform >= 1.10 and S3 bucket versioning enabled.
+# Fill in the values below before running terraform init.
 
-bucket       = "REPLACE_WITH_YOUR_STATE_BUCKET"
-region       = "us-east-1"
-encrypt      = true
-use_lockfile = true
+region = "ap-south-1"   # change to your AWS region if different
+# bucket = "your-tfstate-bucket-name"   # can also be passed here instead of at prompt
+# key    = "3-tier-app/terraform.tfstate"

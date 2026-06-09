@@ -1,87 +1,41 @@
-data "aws_ami" "ubuntu" {
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+data "aws_ami" "amazon_linux" {
   most_recent = true
-  owners      = ["099720109477"]
+  owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    values = ["al2023-ami-*-x86_64"]
   }
 }
 
-# Launch Template for bastion
-resource "aws_launch_template" "bastion" {
-  name_prefix   = "${var.name_prefix}-bastion-lt-"
-  image_id      = data.aws_ami.ubuntu.id
-  instance_type = var.instance_type
-  key_name      = var.key_name
-
-  vpc_security_group_ids = [var.bastion_sg_id]
-
-  block_device_mappings {
-    device_name = "/dev/sda1"
-    ebs {
-      volume_size           = 8
-      volume_type           = "gp3"
-      delete_on_termination = true
-      encrypted             = true
-    }
-  }
+resource "aws_instance" "bastion" {
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = "t3.micro"
+  subnet_id                   = var.subnet_id
+  vpc_security_group_ids      = [var.bastion_sg_id]
+  key_name                    = var.key_name
+  associate_public_ip_address = true
 
   metadata_options {
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_tokens   = "required"
+    http_endpoint = "enabled"
   }
 
-  user_data = base64encode(<<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get install -y awscli curl wget unzip
-  EOF
-  )
-
-  tag_specifications {
-    resource_type = "instance"
-    tags          = merge(var.tags, { Name = "${var.name_prefix}-bastion" })
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 20
+    encrypted             = true
+    delete_on_termination = true
   }
 
-  tags = merge(var.tags, { Name = "${var.name_prefix}-bastion-lt" })
-}
-
-# HA Bastion ASG — one instance running across all public subnets
-# min=1 ensures the bastion is always available even if an AZ goes down
-resource "aws_autoscaling_group" "bastion" {
-  name                = "${var.name_prefix}-bastion-asg"
-  vpc_zone_identifier = var.subnet_ids
-  min_size            = 1
-  max_size            = 1
-  desired_capacity    = 1
-
-  launch_template {
-    id      = aws_launch_template.bastion.id
-    version = "$Latest"
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "${var.name_prefix}-bastion"
-    propagate_at_launch = true
-  }
-
-  dynamic "tag" {
-    for_each = var.tags
-    content {
-      key                 = tag.key
-      value               = tag.value
-      propagate_at_launch = true
-    }
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
+  tags = merge(var.tags, { Name = "${var.name_prefix}-bastion" })
 }

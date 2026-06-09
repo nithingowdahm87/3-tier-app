@@ -1,5 +1,11 @@
 variable "name_prefix" {
-  type = string
+  type        = string
+  description = "Prefix for resource naming"
+}
+
+variable "alb_dns_name" {
+  type        = string
+  description = "DNS name of the ALB to use as CloudFront origin"
 }
 
 variable "acm_certificate_arn" {
@@ -7,20 +13,16 @@ variable "acm_certificate_arn" {
   description = "ACM cert ARN (must be in us-east-1 for CloudFront)"
 }
 
-variable "alb_dns_name" {
+variable "waf_acl_arn" {
   type        = string
-  description = "DNS name of the primary ALB used as CloudFront origin"
+  description = "ARN of WAFv2 WebACL to associate (leave empty to skip)"
+  default     = ""
 }
 
 variable "cloudfront_logs_bucket" {
   type        = string
-  description = "S3 bucket domain name for CloudFront access logs (e.g. bucket.s3.amazonaws.com)"
-}
-
-variable "waf_acl_arn" {
-  type        = string
+  description = "S3 bucket domain name for CloudFront access logs"
   default     = ""
-  description = "ARN of a WAFv2 WebACL scoped to CLOUDFRONT to attach (optional)"
 }
 
 variable "tags" {
