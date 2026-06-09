@@ -1,7 +1,16 @@
 # ─── Root terragrunt.hcl ─────────────────────────────────────────────────────
-# Terragrunt v1.x: bucket + lock file auto-created via --backend-bootstrap.
-# Run: terragrunt init --backend-bootstrap  (first time only)
-# Subsequent runs: terragrunt plan / terragrunt apply
+# Terragrunt v1.x
+#
+# FIRST TIME SETUP — create the S3 bucket:
+#   terragrunt init --backend-bootstrap
+#
+# All subsequent runs (bucket already exists):
+#   terragrunt init
+#   terragrunt plan
+#   terragrunt apply
+#
+# NOTE: --backend-bootstrap is a Terragrunt CLI flag — do NOT put it in
+# extra_arguments (that forwards it to terraform init which rejects it).
 
 locals {
   project     = "nithin-3tier"
@@ -27,35 +36,29 @@ remote_state {
     region  = local.region
     encrypt = true
 
-    # Native S3 lockfile (AWS provider >= 5.x) — replaces deprecated dynamodb_table
+    # Native S3 lockfile (AWS provider >= v5) — no DynamoDB table needed
     use_lockfile = true
 
-    # Tags applied by Terragrunt when it bootstraps the bucket
+    # Tags Terragrunt applies when bootstrapping the bucket
     s3_bucket_tags = {
       Project     = local.project
       Environment = local.environment
       ManagedBy   = "terragrunt"
     }
 
-    # Terragrunt bucket-creation controls (never written into backend_generated.tf)
+    # Bucket hardening — consumed by Terragrunt bootstrap only,
+    # never written into backend_generated.tf
     skip_bucket_versioning             = false  # versioning ON
-    skip_bucket_ssencryption           = false  # SSE-S3 encryption ON
-    skip_bucket_root_access            = true   # deny root account access
-    skip_bucket_enforced_tls           = false  # enforce TLS bucket policy
-    skip_bucket_public_access_blocking = false  # block all public access
+    skip_bucket_ssencryption           = false  # SSE-S3 ON
+    skip_bucket_root_access            = true   # deny root access
+    skip_bucket_enforced_tls           = false  # enforce TLS policy
+    skip_bucket_public_access_blocking = false  # block public access
   }
 }
 
 # ─── Terraform binary settings ───────────────────────────────────────────────
 terraform {
-  # Auto-pass --backend-bootstrap on every init so the bucket is created
-  # automatically without needing to remember the flag manually.
-  extra_arguments "bootstrap_init" {
-    commands  = ["init"]
-    arguments = ["--backend-bootstrap"]
-  }
-
-  # Auto-pass tfvars files on plan/apply/destroy/etc.
+  # Auto-pass tfvars on plan/apply/destroy/import/etc.
   extra_arguments "common_vars" {
     commands = get_terraform_commands_that_need_vars()
     optional_var_files = [
