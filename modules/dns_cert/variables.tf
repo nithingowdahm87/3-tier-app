@@ -13,6 +13,12 @@ variable "zone_id" {
   description = "Route 53 hosted zone ID used for DNS validation and A-record creation"
 }
 
+variable "hosted_zone_id" {
+  type        = string
+  description = "Alias for zone_id — used by Route 53 record resources inside this module"
+  default     = ""
+}
+
 variable "nlb_dns_name" {
   type        = string
   description = "DNS name of the primary NLB for Route 53 health check and alias record"

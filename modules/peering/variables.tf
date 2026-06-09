@@ -1,47 +1,45 @@
-variable "name_prefix" {
+variable "vpc_id" {
   type        = string
-  description = "Name prefix for VPC peering resources"
+  description = "ID of the requester (primary) VPC"
 }
 
-variable "primary_vpc_id" {
+variable "peer_vpc_id" {
   type        = string
-  description = "VPC ID of the primary (requester) VPC"
+  description = "ID of the accepter (secondary) VPC"
 }
 
-variable "secondary_vpc_id" {
+variable "peer_region" {
   type        = string
-  description = "VPC ID of the secondary (accepter) VPC"
+  description = "AWS region of the accepter VPC (for cross-region peering)"
 }
 
-variable "primary_region" {
+variable "peer_owner_id" {
   type        = string
-  description = "AWS region of the primary VPC"
+  description = "AWS account ID of the accepter VPC owner"
+  default     = ""
 }
 
-variable "secondary_region" {
+variable "primary_cidr" {
   type        = string
-  description = "AWS region of the secondary VPC"
+  description = "CIDR of the primary VPC — added to secondary route tables"
+  default     = ""
 }
 
-variable "primary_vpc_cidr" {
+variable "secondary_cidr" {
   type        = string
-  description = "CIDR block of the primary VPC"
-}
-
-variable "secondary_vpc_cidr" {
-  type        = string
-  description = "CIDR block of the secondary VPC"
+  description = "CIDR of the secondary VPC — added to primary route tables"
+  default     = ""
 }
 
 variable "primary_route_table_ids" {
   type        = list(string)
-  description = "Route table IDs in the primary VPC to add peering routes"
+  description = "Route table IDs in the primary VPC to update with secondary CIDR route"
   default     = []
 }
 
 variable "secondary_route_table_ids" {
   type        = list(string)
-  description = "Route table IDs in the secondary VPC to add peering routes"
+  description = "Route table IDs in the secondary VPC to update with primary CIDR route"
   default     = []
 }
 

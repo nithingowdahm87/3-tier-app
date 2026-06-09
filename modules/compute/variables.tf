@@ -13,6 +13,24 @@ variable "instance_type" {
   default = "t3.small"
 }
 
+variable "fallback_instance_type" {
+  type        = string
+  description = "Fallback instance type for mixed-instances policy (Spot/OD override)"
+  default     = "t3.medium"
+}
+
+variable "on_demand_base_capacity" {
+  type        = number
+  description = "Minimum number of On-Demand instances in the ASG mixed-instances policy"
+  default     = 1
+}
+
+variable "secret_path_prefix" {
+  type        = string
+  description = "Secrets Manager path prefix this tier is allowed to read (e.g. prod/app)"
+  default     = "prod"
+}
+
 variable "min_size" {
   type    = number
   default = 1

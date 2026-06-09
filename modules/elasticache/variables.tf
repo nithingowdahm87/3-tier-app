@@ -1,12 +1,6 @@
 variable "name_prefix" {
   type        = string
-  description = "Name prefix for all ElastiCache resources"
-}
-
-variable "environment" {
-  type        = string
-  description = "Deployment environment (e.g. prod, staging)"
-  default     = "prod"
+  description = "Prefix for all ElastiCache resource names"
 }
 
 variable "node_type" {
@@ -14,32 +8,37 @@ variable "node_type" {
   default = "cache.t4g.small"
 }
 
-variable "num_cache_clusters" {
+variable "num_cache_nodes" {
   type        = number
-  description = "Number of cache nodes in the replication group (maps to num_cache_nodes)"
+  description = "Number of cache nodes / replicas in the replication group"
   default     = 2
 }
 
-variable "auth_token" {
+variable "redis_sg_id" {
   type        = string
-  description = "AUTH token for Redis in-transit encryption"
-  default     = ""
+  description = "Security group ID to attach to the ElastiCache replication group"
+}
+
+variable "redis_auth_token" {
+  type        = string
+  description = "AUTH token (password) for Redis in-transit encryption"
   sensitive   = true
+}
+
+variable "log_group_name" {
+  type        = string
+  description = "CloudWatch Log Group name for ElastiCache slow/engine logs"
+  default     = ""
 }
 
 variable "subnet_ids" {
   type        = list(string)
-  description = "Subnet IDs for the ElastiCache subnet group"
+  description = "List of subnet IDs for the ElastiCache subnet group"
 }
 
-variable "security_group_ids" {
-  type        = list(string)
-  description = "Security group IDs to attach to the replication group"
-}
-
-variable "kms_key_arn" {
+variable "kms_key_id" {
   type        = string
-  description = "KMS key ARN for ElastiCache at-rest encryption"
+  description = "KMS key ID for at-rest encryption"
   default     = ""
 }
 
