@@ -4,12 +4,12 @@ variable "name_prefix" {
 
 variable "bucket_name" {
   type        = string
-  description = "Globally unique S3 bucket name for AWS Config snapshots"
+  description = "Globally unique S3 bucket name for AWS Config delivery"
 }
 
 variable "aws_account_id" {
   type        = string
-  description = "AWS account ID for S3 bucket policy conditions"
+  description = "AWS account ID used in S3 bucket policy conditions"
 }
 
 variable "tags" {

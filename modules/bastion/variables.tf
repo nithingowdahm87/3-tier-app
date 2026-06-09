@@ -2,8 +2,12 @@ variable "name_prefix" {
   type = string
 }
 
-variable "subnet_ids" {
-  type = list(string)
+variable "vpc_id" {
+  type = string
+}
+
+variable "subnet_id" {
+  type = string
 }
 
 variable "bastion_sg_id" {
@@ -12,11 +16,6 @@ variable "bastion_sg_id" {
 
 variable "key_name" {
   type = string
-}
-
-variable "instance_type" {
-  type    = string
-  default = "t3.micro"
 }
 
 variable "tags" {

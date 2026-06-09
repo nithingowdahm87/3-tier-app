@@ -9,7 +9,7 @@ variable "bucket_name" {
 
 variable "aws_account_id" {
   type        = string
-  description = "AWS account ID for S3 bucket policy conditions"
+  description = "AWS account ID used in S3 bucket policy conditions"
 }
 
 variable "tags" {

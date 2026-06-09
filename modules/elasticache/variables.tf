@@ -15,9 +15,9 @@ variable "node_type" {
   default = "cache.t4g.small"
 }
 
-variable "num_cache_nodes" {
+variable "num_cache_clusters" {
   type    = number
-  default = 1
+  default = 2
 }
 
 variable "auth_token" {

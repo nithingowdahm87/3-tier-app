@@ -36,11 +36,15 @@ variable "security_group_ids" {
 }
 
 variable "key_name" {
+  type = string
+}
+
+variable "user_data" {
   type    = string
   default = ""
 }
 
-variable "user_data" {
+variable "iam_instance_profile" {
   type    = string
   default = ""
 }

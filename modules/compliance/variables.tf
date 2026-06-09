@@ -4,12 +4,12 @@ variable "name_prefix" {
 
 variable "recorder_id" {
   type        = string
-  description = "AWS Config recorder ID from module.config_rules"
+  description = "AWS Config recorder ID"
 }
 
-variable "recorder_id_secondary" {
+variable "config_bucket" {
   type        = string
-  description = "AWS Config recorder ID from module.config_rules_secondary"
+  description = "S3 bucket used by AWS Config"
 }
 
 variable "tags" {
