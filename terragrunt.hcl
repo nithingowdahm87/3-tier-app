@@ -3,14 +3,13 @@
 # No manual AWS CLI steps needed.
 
 locals {
-  # Read from terraform.tfvars.example or override via env vars
   project     = "nithin-3tier"
   environment = get_env("TF_VAR_environment", "prod")
   region      = get_env("TF_VAR_primary_region", "ap-south-1")
 
-  bucket_name    = "${local.project}-${local.environment}-tfstate"
-  lock_table     = "${local.project}-${local.environment}-tfstate-lock"
-  state_key      = "3-tier-app/terraform.tfstate"
+  bucket_name = "${local.project}-${local.environment}-tfstate"
+  lock_table  = "${local.project}-${local.environment}-tfstate-lock"
+  state_key   = "3-tier-app/terraform.tfstate"
 }
 
 # ─── Remote State (auto-created by Terragrunt) ───────────────────────────────
@@ -31,7 +30,7 @@ remote_state {
     encrypt        = true
     dynamodb_table = local.lock_table
 
-    # Security hardening on the auto-created bucket
+    # Tags applied by Terragrunt when it creates the bucket/table
     s3_bucket_tags = {
       Project     = local.project
       Environment = local.environment
@@ -44,19 +43,19 @@ remote_state {
       ManagedBy   = "terragrunt"
     }
 
-    # Enable bucket versioning so state history is preserved
-    enable_bucket_versioning = true
-
-    # Block all public access on the state bucket
-    enable_server_side_encryption = true
-    skip_bucket_root_access       = true
-    skip_bucket_enforced_tls      = false
+    # These are Terragrunt bucket-creation controls (NOT S3 backend args).
+    # They tell Terragrunt how to configure the bucket it creates —
+    # they are NOT forwarded into the generated backend block.
+    skip_bucket_versioning      = false   # false  → versioning ON
+    skip_bucket_ssencryption    = false   # false  → SSE-S3 encryption ON
+    skip_bucket_root_access     = true    # true   → deny root account access
+    skip_bucket_enforced_tls    = false   # false  → enforce TLS on bucket policy
+    skip_bucket_public_access_blocking = false # false → block all public access
   }
 }
 
 # ─── Terraform binary settings ───────────────────────────────────────────────
 terraform {
-  # Automatically run terraform init before plan/apply
   extra_arguments "common_vars" {
     commands = get_terraform_commands_that_need_vars()
     optional_var_files = [
@@ -65,7 +64,3 @@ terraform {
     ]
   }
 }
-
-# ─── Generate providers.tf (overrides the static backend block) ──────────────
-# This is NOT needed if you keep providers.tf with backend "s3" {} unchanged.
-# Terragrunt injects backend_generated.tf which takes precedence.
