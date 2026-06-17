@@ -53,7 +53,7 @@ jobs:
           github.event.inputs.environment != matrix.environment
         run: echo "Skipping ${{ matrix.environment }} — manual run targeted ${{ github.event.inputs.environment }}" && exit 0
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.environment == 'prod' && 'main' || matrix.environment == 'stage' && 'stage' || 'develop' }}
 
