@@ -5,7 +5,7 @@
 #   stage      -> lint + security + validate + plan + apply (stage) [auto]
 #   main       -> lint + security + validate + plan + apply (prod)  [manual approval via GitHub Environment]
 #
-# Auth: OIDC keyless authentication via aws-actions/configure-aws-credentials@v4
+# Auth: OIDC keyless authentication via aws-actions/configure-aws-credentials@v6
 # No static AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY needed.
 # Required IAM role: arn:aws:iam::ACCOUNT_ID:role/github-actions-terraform
 # Trust policy subject: repo:nithingowdahm87/3-tier-app:*
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -258,7 +258,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
