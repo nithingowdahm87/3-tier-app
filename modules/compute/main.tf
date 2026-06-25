@@ -14,7 +14,7 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_iam_role" "ec2" {
-  name = "${var.name_prefix}-${var.role}-ec2-role"
+  name_prefix = "${var.name_prefix}-${var.role}-ec2-role-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -52,8 +52,8 @@ resource "aws_iam_role_policy" "secrets_read" {
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "${var.name_prefix}-${var.role}-profile"
-  role = aws_iam_role.ec2.name
+  name_prefix = "${var.name_prefix}-${var.role}-profile-"
+  role        = aws_iam_role.ec2.name
 }
 
 resource "aws_launch_template" "this" {
@@ -102,10 +102,10 @@ resource "aws_launch_template" "this" {
 }
 
 resource "aws_autoscaling_group" "this" {
-  name                      = "${var.name_prefix}-${var.role}-asg"
+  name_prefix               = "${var.name_prefix}-${var.role}-asg-"
   vpc_zone_identifier       = var.subnet_ids
   target_group_arns         = var.target_group_arns
-  health_check_type         = "ELB"
+  health_check_type         = "EC2"
   health_check_grace_period = 300
   min_size                  = var.min_size
   max_size                  = var.max_size

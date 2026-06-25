@@ -12,22 +12,23 @@ output "secondary_vpc_id" {
 
 output "nlb_dns_name" {
   description = "NLB DNS name — your Route53 A record aliases to this"
-  value       = module.nlb_primary.nlb_dns_name
+  value       = module.alb_primary.external_alb_dns_name
 }
 
 output "secondary_nlb_dns_name" {
   description = "Secondary NLB DNS name (DR / Global Accelerator secondary endpoint)"
-  value       = module.nlb_secondary.nlb_dns_name
+  value       = module.alb_secondary.external_alb_dns_name
 }
+
 
 output "global_accelerator_dns" {
   description = "Global Accelerator DNS — use this for lowest-latency global access"
-  value       = module.globalaccelerator.accelerator_dns
+  value       = try(module.globalaccelerator[0].accelerator_dns, "disabled")
 }
 
 output "global_accelerator_static_ips" {
   description = "Global Accelerator static IP addresses (allowlist in corporate firewalls)"
-  value       = module.globalaccelerator.static_ip_addresses
+  value       = try(module.globalaccelerator[0].static_ip_addresses, [])
 }
 
 output "cloudfront_domain" {
@@ -94,23 +95,7 @@ output "redis_auth_secret" {
 
 # --- Aurora Global -----------------------------------------------------------
 
-output "aurora_primary_endpoint" {
-  description = "Aurora primary cluster write endpoint"
-  value       = module.aurora.primary_cluster_endpoint
-  sensitive   = true
-}
 
-output "aurora_primary_reader_endpoint" {
-  description = "Aurora primary cluster read endpoint"
-  value       = module.aurora.primary_reader_endpoint
-  sensitive   = true
-}
-
-output "aurora_secondary_endpoint" {
-  description = "Aurora secondary cluster endpoint (DR region)"
-  value       = module.aurora.secondary_cluster_endpoint
-  sensitive   = true
-}
 
 # --- ElastiCache Redis -------------------------------------------------------
 
@@ -183,19 +168,19 @@ output "waf_secondary_web_acl_arn" {
 
 output "guardduty_primary_detector" {
   description = "GuardDuty detector ID in primary region"
-  value       = module.guardduty.primary_detector_id
+  value       = try(module.guardduty[0].primary_detector_id, "disabled")
 }
 
 # --- FIS Chaos Engineering ---------------------------------------------------
 
 output "fis_terminate_web_template" {
   description = "FIS experiment template ID for web tier EC2 termination chaos"
-  value       = module.fis.terminate_web_template_id
+  value       = try(module.fis[0].terminate_web_template_id, "disabled")
 }
 
 output "fis_aurora_failover_template" {
   description = "FIS experiment template ID for Aurora failover drill"
-  value       = module.fis.aurora_failover_template_id
+  value       = try(module.fis[0].aurora_failover_template_id, "disabled")
 }
 
 # --- VPC Flow Logs -----------------------------------------------------------

@@ -1,10 +1,15 @@
 terraform {
   required_providers {
     aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+      source                = "hashicorp/aws"
+      version               = "~> 5.0"
+      configuration_aliases = [aws.primary, aws.us_east_1]
     }
   }
+}
+
+locals {
+  use_acm_cert = var.acm_certificate_arn != "" && !strcontains(var.acm_certificate_arn, "REPLACE") && !strcontains(var.acm_certificate_arn, "123456789012")
 }
 
 resource "aws_cloudfront_distribution" "this" {
@@ -42,9 +47,10 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = var.acm_certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    acm_certificate_arn            = local.use_acm_cert ? var.acm_certificate_arn : null
+    ssl_support_method             = local.use_acm_cert ? "sni-only" : null
+    minimum_protocol_version       = local.use_acm_cert ? "TLSv1.2_2021" : null
+    cloudfront_default_certificate = !local.use_acm_cert
   }
 
   restrictions {

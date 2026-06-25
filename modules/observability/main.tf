@@ -41,47 +41,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
   }
 }
 
-resource "aws_iam_role" "firehose" {
-  name = "${var.name_prefix}-firehose-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = { Service = "firehose.amazonaws.com" }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "firehose" {
-  role = aws_iam_role.firehose.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["s3:AbortMultipartUpload", "s3:GetBucketLocation", "s3:GetObject", "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:PutObject"]
-      Resource = [aws_s3_bucket.logs.arn, "${aws_s3_bucket.logs.arn}/*"]
-    }]
-  })
-}
-
-resource "aws_kinesis_firehose_delivery_stream" "logs" {
-  name        = "${var.name_prefix}-log-delivery"
-  destination = "extended_s3"
-
-  extended_s3_configuration {
-    role_arn            = aws_iam_role.firehose.arn
-    bucket_arn          = aws_s3_bucket.logs.arn
-    prefix              = "logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
-    error_output_prefix = "errors/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/!{firehose:error-output-type}/"
-    buffering_size      = 64
-    buffering_interval  = 300
-    compression_format  = "GZIP"
-  }
-
-  tags = var.tags
-}
 
 resource "aws_athena_workgroup" "logs" {
   name = "${var.name_prefix}-logs"
@@ -139,19 +98,10 @@ locals {
     {
       type = "metric"
       properties = {
-        title   = "Aurora DB Connections"
+        title   = "RDS DB Connections"
         period  = 300
         stat    = "Average"
-        metrics = [["AWS/RDS", "DatabaseConnections", "DBClusterIdentifier", var.aurora_cluster_id]]
-      }
-    },
-    {
-      type = "metric"
-      properties = {
-        title   = "Aurora Replica Lag (ms)"
-        period  = 60
-        stat    = "Maximum"
-        metrics = [["AWS/RDS", "AuroraGlobalDBReplicationLag"]]
+        metrics = [["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", var.db_instance_id]]
       }
     },
     {

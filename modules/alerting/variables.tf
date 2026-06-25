@@ -28,13 +28,15 @@ variable "web_min_healthy_hosts" {
   default = 1
 }
 
-variable "aurora_cluster_id" {
+variable "db_instance_id" {
   type = string
+  description = "RDS DB instance identifier for alerts"
 }
 
-variable "aurora_max_connections_threshold" {
+variable "rds_max_connections_threshold" {
   type    = number
   default = 800
+  description = "Max connections threshold for RDS alerts"
 }
 
 variable "dynamodb_table_name" {

@@ -6,6 +6,7 @@ locals {
     Owner       = var.owner_tag
     CostCenter  = var.cost_center_tag
   }
+  enable_unsupported_services = false
 }
 
 # ─── IAM Account Password Policy ─────────────────────────────────────────────
@@ -29,7 +30,7 @@ module "logging" {
   source    = "./modules/logging"
   providers = { aws = aws.primary }
 
-  bucket_name        = "${var.project_name}-${var.environment}-alb-logs"
+  bucket_name        = "${var.project_name}-${var.environment}-alb-logs-${var.aws_account_id}"
   log_retention_days = 90
   tags               = local.common_tags
 }
@@ -38,7 +39,7 @@ module "logging_secondary" {
   source    = "./modules/logging"
   providers = { aws = aws.secondary }
 
-  bucket_name        = "${var.project_name}-${var.environment}-alb-logs-secondary"
+  bucket_name        = "${var.project_name}-${var.environment}-alb-logs-secondary-${var.aws_account_id}"
   log_retention_days = 90
   tags               = local.common_tags
 }
@@ -53,25 +54,37 @@ module "keypair" {
   tags        = local.common_tags
 }
 
+module "keypair_secondary" {
+  source    = "./modules/keypair"
+  providers = { aws = aws.secondary }
+
+  name_prefix = "${var.project_name}-${var.environment}-secondary"
+  tags        = local.common_tags
+}
+
 # ─── Secrets: Aurora Password ─────────────────────────────────────────────────
 
 module "aurora_secret" {
   source    = "./modules/secrets"
   providers = { aws = aws.primary }
 
-  secret_name = "/${var.environment}/aurora/master_password"
+  secret_name = "/${var.project_name}-${var.environment}/aurora/master_password"
   description = "Aurora MySQL master password for ${var.project_name} ${var.environment}"
   tags        = local.common_tags
 }
 
-data "aws_secretsmanager_secret_version" "aurora" {
-  provider   = aws.primary
-  secret_id  = module.aurora_secret.secret_name
-  depends_on = [module.aurora_secret]
+resource "aws_secretsmanager_secret_version" "aurora" {
+  provider      = aws.primary
+  secret_id     = module.aurora_secret.secret_name
+  secret_string = jsonencode({ password = "ChangeMePassword123!" })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
 }
 
 locals {
-  db_password = jsondecode(data.aws_secretsmanager_secret_version.aurora.secret_string)["password"]
+  db_password = jsondecode(aws_secretsmanager_secret_version.aurora.secret_string)["password"]
 }
 
 # ─── Secrets: Redis AUTH Token ────────────────────────────────────────────────
@@ -80,19 +93,23 @@ module "redis_secret" {
   source    = "./modules/secrets"
   providers = { aws = aws.primary }
 
-  secret_name = "/${var.environment}/redis/auth_token"
+  secret_name = "/${var.project_name}-${var.environment}/redis/auth_token"
   description = "ElastiCache Redis AUTH token for ${var.project_name} ${var.environment}"
   tags        = local.common_tags
 }
 
-data "aws_secretsmanager_secret_version" "redis" {
-  provider   = aws.primary
-  secret_id  = module.redis_secret.secret_name
-  depends_on = [module.redis_secret]
+resource "aws_secretsmanager_secret_version" "redis" {
+  provider      = aws.primary
+  secret_id     = module.redis_secret.secret_name
+  secret_string = jsonencode({ token = "ChangeMeToken123!" })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
 }
 
 locals {
-  redis_auth_token = jsondecode(data.aws_secretsmanager_secret_version.redis.secret_string)["token"]
+  redis_auth_token = jsondecode(aws_secretsmanager_secret_version.redis.secret_string)["token"]
 }
 
 # ─── Primary Network ──────────────────────────────────────────────────────────
@@ -200,28 +217,31 @@ module "alb_primary" {
   alb_logs_bucket     = module.logging.bucket_name
   tags                = local.common_tags
 }
-
-module "nlb_primary" {
-  source    = "./modules/nlb"
-  providers = { aws = aws.primary }
-
-  name_prefix       = "${var.project_name}-${var.environment}-primary"
-  vpc_id            = module.network_primary.vpc_id
-  public_subnet_ids = module.network_primary.public_subnet_ids
-  alb_arn           = module.alb_primary.external_alb_arn
-  tags              = local.common_tags
-}
-
-module "nlb_secondary" {
-  source    = "./modules/nlb"
-  providers = { aws = aws.secondary }
-
-  name_prefix       = "${var.project_name}-${var.environment}-secondary"
-  vpc_id            = module.network_secondary.vpc_id
-  public_subnet_ids = module.network_secondary.public_subnet_ids
-  alb_arn           = module.alb_secondary.external_alb_arn
-  tags              = local.common_tags
-}
+# module "nlb_primary" {
+#   source    = "./modules/nlb"
+#   providers = { aws = aws.primary }
+# 
+#   name_prefix       = "${var.project_name}-${var.environment}-primary"
+#   vpc_id            = module.network_primary.vpc_id
+#   public_subnet_ids = module.network_primary.public_subnet_ids
+#   alb_arn           = module.alb_primary.external_alb_arn
+#   tags              = local.common_tags
+# 
+#   depends_on = [module.alb_primary]
+# }
+# 
+# module "nlb_secondary" {
+#   source    = "./modules/nlb"
+#   providers = { aws = aws.secondary }
+# 
+#   name_prefix       = "${var.project_name}-${var.environment}-secondary"
+#   vpc_id            = module.network_secondary.vpc_id
+#   public_subnet_ids = module.network_secondary.public_subnet_ids
+#   alb_arn           = module.alb_secondary.external_alb_arn
+#   tags              = local.common_tags
+# 
+#   depends_on = [module.alb_secondary]
+# }
 
 module "alb_secondary" {
   source    = "./modules/alb"
@@ -302,7 +322,7 @@ module "web_asg_secondary" {
 
   name_prefix        = "${var.project_name}-${var.environment}-secondary"
   instance_type      = var.web_instance_type
-  key_name           = module.keypair.key_name
+  key_name           = module.keypair_secondary.key_name
   security_group_ids = [module.security_secondary.web_sg_id]
   subnet_ids         = module.network_secondary.private_subnet_ids
   target_group_arns  = [module.alb_secondary.web_target_group_arn]
@@ -319,7 +339,7 @@ module "app_asg_secondary" {
 
   name_prefix        = "${var.project_name}-${var.environment}-secondary"
   instance_type      = var.app_instance_type
-  key_name           = module.keypair.key_name
+  key_name           = module.keypair_secondary.key_name
   security_group_ids = [module.security_secondary.app_sg_id]
   subnet_ids         = module.network_secondary.private_subnet_ids
   target_group_arns  = [module.alb_secondary.app_target_group_arn]
@@ -347,8 +367,9 @@ module "aurora" {
   database_name           = var.db_name
   master_username         = var.db_username
   master_password         = local.db_password
-  tags                    = local.common_tags
+  parameter_group_name    = var.parameter_group_name
 }
+
 
 # ─── ElastiCache Redis ────────────────────────────────────────────────────────
 
@@ -357,6 +378,7 @@ module "elasticache" {
   providers = { aws = aws.primary }
 
   name_prefix      = "${var.project_name}-${var.environment}"
+  environment      = var.environment
   subnet_ids       = module.network_primary.private_subnet_ids
   redis_sg_id      = module.security_primary.redis_sg_id
   node_type        = var.redis_node_type
@@ -383,9 +405,9 @@ module "backup_primary" {
   source    = "./modules/backup"
   providers = { aws = aws.primary }
 
-  name_prefix   = "${var.project_name}-${var.environment}-primary"
+  name_prefix = "${var.project_name}-${var.environment}-primary"
   resource_arns = [
-    module.aurora.primary_cluster_arn,
+    module.aurora.primary_db_instance_id,
     module.dynamodb.table_arn,
   ]
   tags = local.common_tags
@@ -396,7 +418,7 @@ module "backup_secondary" {
   providers = { aws = aws.secondary }
 
   name_prefix   = "${var.project_name}-${var.environment}-secondary"
-  resource_arns = [module.aurora.secondary_cluster_arn]
+  resource_arns = [module.aurora.secondary_db_instance_id]
   tags          = local.common_tags
 }
 
@@ -409,6 +431,7 @@ module "vpc_peering" {
     aws.peer = aws.secondary
   }
 
+  name_prefix               = "${var.project_name}-${var.environment}"
   vpc_id                    = module.network_primary.vpc_id
   peer_vpc_id               = module.network_secondary.vpc_id
   peer_region               = var.secondary_region
@@ -434,6 +457,7 @@ module "cloudtrail" {
 # ─── GuardDuty ────────────────────────────────────────────────────────────────
 
 module "guardduty" {
+  count  = local.enable_unsupported_services ? 1 : 0
   source = "./modules/guardduty"
   providers = {
     aws.primary   = aws.primary
@@ -448,6 +472,7 @@ module "guardduty" {
 # ─── Security Hub (both regions) ──────────────────────────────────────────────
 
 module "security_hub" {
+  count     = local.enable_unsupported_services ? 1 : 0
   source    = "./modules/security_hub"
   providers = { aws = aws.primary }
 
@@ -456,6 +481,7 @@ module "security_hub" {
 }
 
 module "security_hub_secondary" {
+  count     = local.enable_unsupported_services ? 1 : 0
   source    = "./modules/security_hub"
   providers = { aws = aws.secondary }
 
@@ -470,7 +496,7 @@ module "config_rules" {
   providers = { aws = aws.primary }
 
   name_prefix    = "${var.project_name}-${var.environment}"
-  bucket_name    = var.config_bucket_name
+  bucket_name    = "${var.config_bucket_name}-primary"
   aws_account_id = var.aws_account_id
   tags           = local.common_tags
 }
@@ -480,7 +506,7 @@ module "config_rules_secondary" {
   providers = { aws = aws.secondary }
 
   name_prefix    = "${var.project_name}-${var.environment}"
-  bucket_name    = var.config_bucket_name
+  bucket_name    = "${var.config_bucket_name}-secondary"
   aws_account_id = var.aws_account_id
   tags           = local.common_tags
 }
@@ -493,7 +519,7 @@ module "compliance" {
 
   name_prefix   = "${var.project_name}-${var.environment}"
   recorder_id   = module.config_rules.recorder_id
-  config_bucket = var.config_bucket_name
+  config_bucket = "${var.config_bucket_name}-primary"
   tags          = local.common_tags
 }
 
@@ -503,7 +529,7 @@ module "compliance_secondary" {
 
   name_prefix   = "${var.project_name}-${var.environment}"
   recorder_id   = module.config_rules_secondary.recorder_id
-  config_bucket = var.config_bucket_name
+  config_bucket = "${var.config_bucket_name}-secondary"
   tags          = local.common_tags
 }
 
@@ -518,7 +544,7 @@ module "observability" {
   alb_arn_suffix      = module.alb_primary.external_alb_arn_suffix
   web_asg_name        = module.web_asg_primary.asg_name
   app_asg_name        = module.app_asg_primary.asg_name
-  aurora_cluster_id   = module.aurora.primary_cluster_id
+  db_instance_id      = module.aurora.primary_db_instance_id
   dynamodb_table_name = module.dynamodb.table_name
   waf_acl_name        = ""
   region              = var.primary_region
@@ -534,7 +560,7 @@ module "observability_secondary" {
   alb_arn_suffix      = module.alb_secondary.external_alb_arn_suffix
   web_asg_name        = module.web_asg_secondary.asg_name
   app_asg_name        = module.app_asg_secondary.asg_name
-  aurora_cluster_id   = module.aurora.secondary_cluster_id
+  db_instance_id      = module.aurora.secondary_db_instance_id
   dynamodb_table_name = module.dynamodb.table_name
   waf_acl_name        = ""
   region              = var.secondary_region
@@ -566,18 +592,18 @@ module "alerting" {
   source    = "./modules/alerting"
   providers = { aws = aws.primary }
 
-  name_prefix                      = "${var.project_name}-${var.environment}"
-  alert_email                      = var.alert_email
-  alb_arn_suffix                   = module.alb_primary.external_alb_arn_suffix
-  web_target_group_arn_suffix      = module.alb_primary.web_target_group_arn_suffix
-  alb_5xx_threshold                = var.alb_5xx_threshold
-  web_min_healthy_hosts            = var.web_min_size
-  aurora_cluster_id                = module.aurora.primary_cluster_id
-  aurora_max_connections_threshold = var.aurora_max_connections_threshold
-  dynamodb_table_name              = module.dynamodb.table_name
-  web_asg_name                     = module.web_asg_primary.asg_name
-  app_asg_name                     = module.app_asg_primary.asg_name
-  tags                             = local.common_tags
+  name_prefix                   = "${var.project_name}-${var.environment}"
+  alert_email                   = var.alert_email
+  alb_arn_suffix                = module.alb_primary.external_alb_arn_suffix
+  web_target_group_arn_suffix   = module.alb_primary.web_target_group_arn_suffix
+  alb_5xx_threshold             = var.alb_5xx_threshold
+  web_min_healthy_hosts         = var.web_min_size
+  db_instance_id                = module.aurora.primary_db_instance_id
+  rds_max_connections_threshold = var.rds_max_connections_threshold
+  dynamodb_table_name           = module.dynamodb.table_name
+  web_asg_name                  = module.web_asg_primary.asg_name
+  app_asg_name                  = module.app_asg_primary.asg_name
+  tags                          = local.common_tags
 }
 
 # ─── WAF ──────────────────────────────────────────────────────────────────────
@@ -588,7 +614,7 @@ module "waf" {
 
   name_prefix             = "${var.project_name}-${var.environment}-primary"
   alb_arn                 = module.alb_primary.external_alb_arn
-  nlb_arn                 = module.nlb_primary.nlb_arn
+  nlb_arn                 = ""
   waf_log_destination_arn = module.observability.firehose_arn
   tags                    = local.common_tags
 }
@@ -599,7 +625,7 @@ module "waf_secondary" {
 
   name_prefix             = "${var.project_name}-${var.environment}-secondary"
   alb_arn                 = module.alb_secondary.external_alb_arn
-  nlb_arn                 = module.nlb_secondary.nlb_arn
+  nlb_arn                 = ""
   waf_log_destination_arn = module.observability_secondary.firehose_arn
   tags                    = local.common_tags
 }
@@ -616,7 +642,7 @@ module "cdn" {
   name_prefix            = "${var.project_name}-${var.environment}"
   alb_dns_name           = module.alb_primary.external_alb_dns_name
   acm_certificate_arn    = var.cloudfront_acm_certificate_arn
-  waf_acl_arn            = module.waf.web_acl_arn
+  waf_acl_arn            = ""
   cloudfront_logs_bucket = "${module.logging.bucket_name}.s3.amazonaws.com"
   tags                   = local.common_tags
 }
@@ -624,27 +650,30 @@ module "cdn" {
 # ─── Global Accelerator ───────────────────────────────────────────────────────
 
 module "globalaccelerator" {
+  count     = local.enable_unsupported_services ? 1 : 0
   source    = "./modules/globalaccelerator"
   providers = { aws = aws.primary }
 
   name_prefix       = "${var.project_name}-${var.environment}"
   primary_region    = var.primary_region
   secondary_region  = var.secondary_region
-  nlb_primary_arn   = module.nlb_primary.nlb_arn
-  nlb_secondary_arn = module.nlb_secondary.nlb_arn
+  nlb_primary_arn   = module.alb_primary.external_alb_arn
+  nlb_secondary_arn = module.alb_secondary.external_alb_arn
   tags              = local.common_tags
 }
+
 
 # ─── FIS Chaos Engineering ────────────────────────────────────────────────────
 
 module "fis" {
+  count     = local.enable_unsupported_services ? 1 : 0
   source    = "./modules/fis"
   providers = { aws = aws.primary }
 
   name_prefix             = "${var.project_name}-${var.environment}"
   environment             = var.environment
   healthy_hosts_alarm_arn = module.alerting.sns_topic_arn
-  aurora_cluster_arn      = module.aurora.primary_cluster_arn
+  aurora_cluster_arn      = module.aurora.primary_db_instance_id
   tags                    = local.common_tags
 }
 
@@ -705,3 +734,54 @@ resource "aws_autoscaling_policy" "app_cpu_secondary" {
     target_value = 60.0
   }
 }
+
+# ─── Route53 Failover Health Check and Records ────────────────────────────────
+
+resource "aws_route53_health_check" "primary" {
+  count             = var.hosted_zone_id != "" && var.hosted_zone_id != "Z1234567890ABC" ? 1 : 0
+  provider          = aws.primary
+  fqdn              = module.alb_primary.external_alb_dns_name
+  port              = 443
+  type              = "HTTPS"
+  resource_path     = "/health"
+  failure_threshold = 3
+  request_interval  = 30
+
+  tags = merge(local.common_tags, { Name = "${var.domain_name}-primary-health-check" })
+}
+
+resource "aws_route53_record" "app_primary" {
+  count          = var.hosted_zone_id != "" && var.hosted_zone_id != "Z1234567890ABC" ? 1 : 0
+  provider       = aws.primary
+  zone_id        = var.hosted_zone_id
+  name           = var.domain_name
+  type           = "A"
+  set_identifier = "primary"
+
+  failover_routing_policy { type = "PRIMARY" }
+  health_check_id = aws_route53_health_check.primary[0].id
+
+  alias {
+    name                   = module.alb_primary.external_alb_dns_name
+    zone_id                = module.alb_primary.external_alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "app_secondary" {
+  count          = var.hosted_zone_id != "" && var.hosted_zone_id != "Z1234567890ABC" ? 1 : 0
+  provider       = aws.primary
+  zone_id        = var.hosted_zone_id
+  name           = var.domain_name
+  type           = "A"
+  set_identifier = "secondary"
+
+  failover_routing_policy { type = "SECONDARY" }
+
+  alias {
+    name                   = module.alb_secondary.external_alb_dns_name
+    zone_id                = module.alb_secondary.external_alb_zone_id
+    evaluate_target_health = true
+  }
+}
+

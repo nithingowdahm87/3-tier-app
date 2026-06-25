@@ -186,7 +186,7 @@ variable "app_max_size" {
 }
 variable "app_desired_capacity" {
   type        = number
-  default     = 3
+  default     = 2
   description = "Desired instances in app ASG"
 }
 variable "app_user_data" {
@@ -253,6 +253,18 @@ variable "aurora_max_connections_threshold" {
   type        = number
   default     = 800
 }
+
+variable "parameter_group_name" {
+  description = "Parameter group name for RDS instance"
+  type        = string
+}
+
+variable "rds_max_connections_threshold" {
+  description = "Max connections threshold for RDS alerts"
+  type        = number
+  default     = 800
+}
+
 
 # S3 Bucket names
 variable "cloudtrail_bucket_name" {

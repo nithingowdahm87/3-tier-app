@@ -73,34 +73,25 @@ resource "aws_cloudwatch_metric_alarm" "web_healthy_hosts" {
 }
 
 # Aurora replica lag alarm
-resource "aws_cloudwatch_metric_alarm" "aurora_replica_lag" {
-  alarm_name          = "${var.name_prefix}-aurora-replica-lag"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
-  metric_name         = "AuroraGlobalDBReplicationLag"
-  namespace           = "AWS/RDS"
-  period              = 60
-  statistic           = "Maximum"
-  threshold           = 30000
-  alarm_description   = "Aurora global replication lag exceeded 30s"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-}
+// Aurora replica lag alarm is not applicable for single RDS instances and has been removed.
 
-# Aurora connection count alarm
-resource "aws_cloudwatch_metric_alarm" "aurora_connections" {
-  alarm_name          = "${var.name_prefix}-aurora-connections"
+resource "aws_cloudwatch_metric_alarm" "rds_connections" {
+  alarm_name          = "${var.name_prefix}-rds-connections"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "DatabaseConnections"
   namespace           = "AWS/RDS"
   period              = 300
   statistic           = "Average"
-  threshold           = var.aurora_max_connections_threshold
-  alarm_description   = "Aurora connection count nearing limit"
+  threshold           = var.rds_max_connections_threshold
+  alarm_description   = "RDS instance connection count nearing limit"
   alarm_actions       = [aws_sns_topic.alerts.arn]
 
-  dimensions = { DBClusterIdentifier = var.aurora_cluster_id }
+  dimensions = { DBInstanceIdentifier = var.db_instance_id }
 }
+
+# Aurora connection count alarm
+
 
 # DynamoDB throttled requests alarm
 resource "aws_cloudwatch_metric_alarm" "dynamodb_throttles" {

@@ -10,9 +10,9 @@ data "aws_caller_identity" "current" {}
 # ─── NAT Gateway — Active Connection Count (proxy for saturation) ─────────────
 
 resource "aws_cloudwatch_metric_alarm" "nat_active_connections" {
-  for_each = toset(var.nat_gateway_ids)
+  count = length(var.nat_gateway_ids)
 
-  alarm_name          = "${var.name_prefix}-nat-${each.key}-active-connections-high"
+  alarm_name          = "${var.name_prefix}-nat-${count.index + 1}-active-connections-high"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 3
   metric_name         = "ActiveConnectionCount"
@@ -20,20 +20,20 @@ resource "aws_cloudwatch_metric_alarm" "nat_active_connections" {
   period              = 60
   statistic           = "Maximum"
   threshold           = var.nat_connection_threshold
-  alarm_description   = "NAT Gateway ${each.key} active connections ≥ ${var.nat_connection_threshold} for 3 consecutive minutes"
+  alarm_description   = "NAT Gateway ${var.nat_gateway_ids[count.index]} active connections ≥ ${var.nat_connection_threshold} for 3 consecutive minutes"
   alarm_actions       = [var.sns_topic_arn]
   ok_actions          = [var.sns_topic_arn]
   treat_missing_data  = "notBreaching"
 
-  dimensions = { NatGatewayId = each.key }
+  dimensions = { NatGatewayId = var.nat_gateway_ids[count.index] }
 
   tags = var.tags
 }
 
 resource "aws_cloudwatch_metric_alarm" "nat_packet_drop" {
-  for_each = toset(var.nat_gateway_ids)
+  count = length(var.nat_gateway_ids)
 
-  alarm_name          = "${var.name_prefix}-nat-${each.key}-packet-drop"
+  alarm_name          = "${var.name_prefix}-nat-${count.index + 1}-packet-drop"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "PacketDropCount"
@@ -41,12 +41,12 @@ resource "aws_cloudwatch_metric_alarm" "nat_packet_drop" {
   period              = 300
   statistic           = "Sum"
   threshold           = var.nat_packet_drop_threshold
-  alarm_description   = "NAT Gateway ${each.key} is dropping packets — possible saturation or quota limit approaching"
+  alarm_description   = "NAT Gateway ${var.nat_gateway_ids[count.index]} is dropping packets — possible saturation or quota limit approaching"
   alarm_actions       = [var.sns_topic_arn]
   ok_actions          = [var.sns_topic_arn]
   treat_missing_data  = "notBreaching"
 
-  dimensions = { NatGatewayId = each.key }
+  dimensions = { NatGatewayId = var.nat_gateway_ids[count.index] }
 
   tags = var.tags
 }

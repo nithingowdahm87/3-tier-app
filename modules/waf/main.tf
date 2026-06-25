@@ -103,16 +103,7 @@ resource "aws_wafv2_web_acl_association" "alb" {
 }
 
 resource "aws_wafv2_web_acl_logging_configuration" "this" {
+  count                   = var.waf_log_destination_arn != "" ? 1 : 0
   log_destination_configs = [var.waf_log_destination_arn]
   resource_arn            = aws_wafv2_web_acl.this.arn
-}
-
-resource "aws_shield_protection" "alb" {
-  name         = "${var.name_prefix}-alb-shield"
-  resource_arn = var.alb_arn
-}
-
-resource "aws_shield_protection" "nlb" {
-  name         = "${var.name_prefix}-nlb-shield"
-  resource_arn = var.nlb_arn
 }

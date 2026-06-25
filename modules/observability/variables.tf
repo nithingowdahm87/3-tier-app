@@ -20,7 +20,8 @@ variable "app_asg_name" {
   type = string
 }
 
-variable "aurora_cluster_id" {
+variable "db_instance_id" {
+  description = "RDS DB instance identifier for observability"
   type = string
 }
 

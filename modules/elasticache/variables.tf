@@ -46,3 +46,8 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "environment" {
+  type        = string
+  description = "Target environment (e.g. dev, prod)"
+}

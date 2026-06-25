@@ -11,6 +11,7 @@ variable "alb_dns_name" {
 variable "acm_certificate_arn" {
   type        = string
   description = "ACM cert ARN (must be in us-east-1 for CloudFront)"
+  default     = ""
 }
 
 variable "waf_acl_arn" {

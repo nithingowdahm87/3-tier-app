@@ -18,7 +18,7 @@ resource "aws_lb" "nlb" {
 
 # TCP:80 listener → forward to ALB
 resource "aws_lb_target_group" "alb_http" {
-  name        = "${var.name_prefix}-nlb-alb-http"
+  name        = "${substr(var.name_prefix, 0, 19)}-nlb-http"
   port        = 80
   protocol    = "TCP"
   vpc_id      = var.vpc_id
@@ -55,7 +55,7 @@ resource "aws_lb_listener" "http" {
 
 # TCP:443 listener → forward to ALB
 resource "aws_lb_target_group" "alb_https" {
-  name        = "${var.name_prefix}-nlb-alb-https"
+  name        = "${substr(var.name_prefix, 0, 18)}-nlb-https"
   port        = 443
   protocol    = "TCP"
   vpc_id      = var.vpc_id

@@ -3,3 +3,7 @@ output "external_alb_dns" { value = aws_lb.external.dns_name }
 output "internal_alb_dns" { value = aws_lb.internal.dns_name }
 output "web_target_group_arn" { value = aws_lb_target_group.web.arn }
 output "app_target_group_arn" { value = aws_lb_target_group.app.arn }
+output "external_alb_arn_suffix" { value = aws_lb.external.arn_suffix }
+output "web_target_group_arn_suffix" { value = aws_lb_target_group.web.arn_suffix }
+output "external_alb_dns_name" { value = aws_lb.external.dns_name }
+output "external_alb_zone_id" { value = aws_lb.external.zone_id }

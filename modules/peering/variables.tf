@@ -47,3 +47,8 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "name_prefix" {
+  type        = string
+  description = "Prefix for peering connection resource names"
+}

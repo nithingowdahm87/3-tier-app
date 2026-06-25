@@ -20,12 +20,12 @@ variable "secondary_aurora_sg_id" {
 
 variable "engine" {
   type    = string
-  default = "aurora-mysql"
+  default = "postgres"
 }
 
 variable "engine_version" {
   type    = string
-  default = "8.0.mysql_aurora.3.08.0"
+  default = "15.9"
 }
 
 variable "database_name" {
@@ -35,7 +35,7 @@ variable "database_name" {
 
 variable "master_username" {
   type    = string
-  default = "admin"
+  default = "postgres"
 }
 
 variable "master_password" {
@@ -44,7 +44,12 @@ variable "master_password" {
   description = "Aurora master password. Should be sourced from Secrets Manager, not set directly."
 }
 
+variable "parameter_group_name" {
+  type = string
+  description = "Parameter group name for the RDS instance"
+}
 variable "tags" {
   type    = map(string)
   default = {}
 }
+

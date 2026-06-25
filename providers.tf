@@ -21,6 +21,11 @@ terraform {
 }
 
 provider "aws" {
+  region = var.primary_region
+  default_tags { tags = { ManagedBy = "terraform" } }
+}
+
+provider "aws" {
   alias  = "primary"
   region = var.primary_region
   default_tags { tags = { ManagedBy = "terraform" } }
