@@ -73,6 +73,18 @@ variable "iam_instance_profile" {
   default = ""
 }
 
+variable "ami_id" {
+  type        = string
+  description = "Explicit AMI ID to use. If set, skips data.aws_ami lookup. Use for LocalStack."
+  default     = ""
+}
+
+variable "ami_owners" {
+  type        = list(string)
+  description = "AMI owner account IDs. Override with [\"000000000000\"] for LocalStack."
+  default     = ["099720109477"]
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

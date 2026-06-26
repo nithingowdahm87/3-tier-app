@@ -330,3 +330,21 @@ variable "acm_expiry_days_threshold" {
   type        = number
   default     = 30
 }
+
+variable "ami_owners" {
+  description = "AMI owner account IDs for EC2 image lookups. Override with [\"000000000000\"] for LocalStack."
+  type        = list(string)
+  default     = ["099720109477"]
+}
+
+variable "primary_ami_id" {
+  description = "Explicit AMI ID for primary region compute. If set, skips data.aws_ami lookup. Use for LocalStack."
+  type        = string
+  default     = ""
+}
+
+variable "secondary_ami_id" {
+  description = "Explicit AMI ID for secondary region compute. If set, skips data.aws_ami lookup. Use for LocalStack."
+  type        = string
+  default     = ""
+}

@@ -111,24 +111,24 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_throttles" {
 }
 
 # ASG launch/terminate notifications
-resource "aws_autoscaling_notification" "web" {
-  group_names = [var.web_asg_name]
-  topic_arn   = aws_sns_topic.alerts.arn
-  notifications = [
-    "autoscaling:EC2_INSTANCE_LAUNCH",
-    "autoscaling:EC2_INSTANCE_TERMINATE",
-    "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
-    "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
-  ]
-}
+# resource "aws_autoscaling_notification" "web" {
+#   group_names = [var.web_asg_name]
+#   topic_arn   = aws_sns_topic.alerts.arn
+#   notifications = [
+#     "autoscaling:EC2_INSTANCE_LAUNCH",
+#     "autoscaling:EC2_INSTANCE_TERMINATE",
+#     "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+#     "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+#   ]
+# }
 
-resource "aws_autoscaling_notification" "app" {
-  group_names = [var.app_asg_name]
-  topic_arn   = aws_sns_topic.alerts.arn
-  notifications = [
-    "autoscaling:EC2_INSTANCE_LAUNCH",
-    "autoscaling:EC2_INSTANCE_TERMINATE",
-    "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
-    "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
-  ]
-}
+# resource "aws_autoscaling_notification" "app" {
+#   group_names = [var.app_asg_name]
+#   topic_arn   = aws_sns_topic.alerts.arn
+#   notifications = [
+#     "autoscaling:EC2_INSTANCE_LAUNCH",
+#     "autoscaling:EC2_INSTANCE_TERMINATE",
+#     "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+#     "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+#   ]
+# }

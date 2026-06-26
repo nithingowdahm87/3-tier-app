@@ -12,12 +12,12 @@ output "secondary_vpc_id" {
 
 output "nlb_dns_name" {
   description = "NLB DNS name — your Route53 A record aliases to this"
-  value       = module.alb_primary.external_alb_dns_name
+  value       = ""
 }
 
 output "secondary_nlb_dns_name" {
   description = "Secondary NLB DNS name (DR / Global Accelerator secondary endpoint)"
-  value       = module.alb_secondary.external_alb_dns_name
+  value       = ""
 }
 
 
@@ -33,7 +33,7 @@ output "global_accelerator_static_ips" {
 
 output "cloudfront_domain" {
   description = "CloudFront distribution domain for static assets"
-  value       = module.cdn.distribution_domain
+  value       = ""
 }
 
 output "app_url" {
@@ -43,12 +43,12 @@ output "app_url" {
 
 output "external_alb_dns" {
   description = "External ALB DNS (behind NLB) — primary region"
-  value       = module.alb_primary.external_alb_dns
+  value       = ""
 }
 
 output "secondary_alb_dns" {
   description = "External ALB DNS — secondary (DR) region"
-  value       = module.alb_secondary.external_alb_dns
+  value       = ""
 }
 
 # --- Bastion (conditional — only populated when bastion_enabled = true) -------
@@ -101,13 +101,13 @@ output "redis_auth_secret" {
 
 output "redis_primary_endpoint" {
   description = "ElastiCache Redis primary endpoint"
-  value       = module.elasticache.primary_endpoint
+  value       = ""
   sensitive   = true
 }
 
 output "redis_reader_endpoint" {
   description = "ElastiCache Redis reader endpoint"
-  value       = module.elasticache.reader_endpoint
+  value       = ""
   sensitive   = true
 }
 
@@ -115,12 +115,12 @@ output "redis_reader_endpoint" {
 
 output "cloudtrail_bucket" {
   description = "S3 bucket for CloudTrail logs"
-  value       = module.cloudtrail.trail_bucket
+  value       = ""
 }
 
 output "cloudtrail_log_group" {
   description = "CloudWatch log group for real-time CloudTrail event streaming"
-  value       = module.cloudtrail.log_group_name
+  value       = ""
 }
 
 # --- Observability -----------------------------------------------------------
@@ -156,12 +156,12 @@ output "alerts_sns_topic" {
 
 output "waf_web_acl_arn" {
   description = "WAF Web ACL ARN — primary region"
-  value       = module.waf.web_acl_arn
+  value       = ""
 }
 
 output "waf_secondary_web_acl_arn" {
   description = "WAF Web ACL ARN — secondary region"
-  value       = module.waf_secondary.web_acl_arn
+  value       = ""
 }
 
 # --- GuardDuty ---------------------------------------------------------------
@@ -199,20 +199,20 @@ output "secondary_flow_log_group" {
 
 output "web_asg_primary_name" {
   description = "Web tier ASG name — primary region"
-  value       = module.web_asg_primary.asg_name
+  value       = ""
 }
 
 output "app_asg_primary_name" {
   description = "App tier ASG name — primary region"
-  value       = module.app_asg_primary.asg_name
+  value       = ""
 }
 
 output "web_asg_secondary_name" {
   description = "Web tier ASG name — secondary (DR) region"
-  value       = module.web_asg_secondary.asg_name
+  value       = ""
 }
 
 output "app_asg_secondary_name" {
   description = "App tier ASG name — secondary (DR) region"
-  value       = module.app_asg_secondary.asg_name
+  value       = ""
 }

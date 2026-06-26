@@ -4,19 +4,19 @@ terraform {
   }
 }
 
-resource "aws_xray_sampling_rule" "default" {
-  rule_name      = "${var.name_prefix}-default"
-  priority       = 9999
-  reservoir_size = 5
-  fixed_rate     = 0.05
-  url_path       = "*"
-  host           = "*"
-  http_method    = "*"
-  service_type   = "*"
-  service_name   = "*"
-  resource_arn   = "*"
-  version        = 1
-}
+# resource "aws_xray_sampling_rule" "default" {
+#   rule_name      = "${var.name_prefix}-default"
+#   priority       = 9999
+#   reservoir_size = 5
+#   fixed_rate     = 0.05
+#   url_path       = "*"
+#   host           = "*"
+#   http_method    = "*"
+#   service_type   = "*"
+#   service_name   = "*"
+#   resource_arn   = "*"
+#   version        = 1
+# }
 
 resource "aws_s3_bucket" "logs" {
   bucket        = var.logs_bucket_name
@@ -42,20 +42,20 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
 }
 
 
-resource "aws_athena_workgroup" "logs" {
-  name = "${var.name_prefix}-logs"
-
-  configuration {
-    enforce_workgroup_configuration    = true
-    publish_cloudwatch_metrics_enabled = true
-
-    result_configuration {
-      output_location = "s3://${aws_s3_bucket.logs.bucket}/athena-results/"
-    }
-  }
-
-  tags = var.tags
-}
+# resource "aws_athena_workgroup" "logs" {
+#   name = "${var.name_prefix}-logs"
+# 
+#   configuration {
+#     enforce_workgroup_configuration    = true
+#     publish_cloudwatch_metrics_enabled = true
+# 
+#     result_configuration {
+#       output_location = "s3://${aws_s3_bucket.logs.bucket}/athena-results/"
+#     }
+#   }
+# 
+#   tags = var.tags
+# }
 
 locals {
   core_widgets = [
