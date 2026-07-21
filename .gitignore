@@ -19,6 +19,11 @@ terragrunt-debug.tfvars.json
 
 # Backend config (contains bucket name — keep out of git)
 backend.hcl
+backend-localstack.hcl
+
+# Local run logs
+apply.log
+*.log
 
 # Generated backend by Terragrunt
 backend_generated.tf
